@@ -1,0 +1,757 @@
+<title>T2* Relaxometry for Iron Concentration</title>
+<script>
+var m;
+var b;
+var strength = 1.5;
+var organ = "liver";
+var TE = [];
+var lnSI = [];
+var SI = [];
+var SD = [];
+var ctx;
+var height;
+var width;
+var unitX;
+var unitY;
+var maxX;
+var maxY;
+var validLength; // = 12;
+
+function changeOption(option) {
+	if (option == "liver") {
+		organ = "liver";
+		document.getElementById('optionLiver').style.backgroundColor = "#FFFFFF";
+		document.getElementById('optionLiver').style.borderColor = "#00DD00";
+		document.getElementById('optionLiver').style.color = "#000000";
+		document.getElementById('optionMyocardium').style.backgroundColor = "#CCCCCC";
+		document.getElementById('optionMyocardium').style.borderColor = "#E2E6EB";
+		document.getElementById('optionMyocardium').style.color = "#555555";
+		document.getElementById('result_header').innerHTML = "LIC";
+		document.getElementById('result_ranges').innerHTML = "LIC: < 2 [normal] | 2 - 7  [light] | 7 - 15 [moderate] | > 15 [severe]";
+		}
+	if (option == "myocardium") {
+		organ = "myocardium";
+		document.getElementById('optionMyocardium').style.backgroundColor = "#FFFFFF";
+		document.getElementById('optionMyocardium').style.borderColor = "#00DD00";
+		document.getElementById('optionMyocardium').style.color = "#000000";
+		document.getElementById('optionLiver').style.backgroundColor = "#CCCCCC";
+		document.getElementById('optionLiver').style.borderColor = "#E2E6EB";
+		document.getElementById('optionLiver').style.color = "#555555";
+		document.getElementById('result_header').innerHTML = "MIC";
+		document.getElementById('result_ranges').innerHTML = "MIC: < 1.16 [normal] | 1.16 - 1.65  [light] | 1.65 - 2.71 [moderate] | > 2.71 [severe]";
+		}
+	if (option == "1.5T") {
+		strength = 1.5;
+		document.getElementById('option1.5T').style.backgroundColor = "#FFFFFF";
+		document.getElementById('option1.5T').style.borderColor = "#00DD00";
+		document.getElementById('option1.5T').style.color = "#000000";
+		document.getElementById('option3T').style.backgroundColor = "#CCCCCC";
+		document.getElementById('option3T').style.borderColor = "#E2E6EB";
+		document.getElementById('option3T').style.color = "#555555";
+		}
+	if (option == "3T") {
+		strength = 3;
+		document.getElementById('option3T').style.backgroundColor = "#FFFFFF";
+		document.getElementById('option3T').style.borderColor = "#00DD00";
+		document.getElementById('option3T').style.color = "#000000";
+		document.getElementById('option1.5T').style.backgroundColor = "#CCCCCC";
+		document.getElementById('option1.5T').style.borderColor = "#E2E6EB";
+		document.getElementById('option1.5T').style.color = "#555555";
+		}
+	calculateIC();
+	}
+
+//		document.getElementById('option_liver').innerHTML = "<span style=\"background-color: #FFFF66\"><b>Liver</b></span>";
+//		document.getElementById('option_myocardium').innerHTML = "Myocardium";
+//		document.getElementById('result_header').innerHTML = "LIC";
+
+function findLineByLeastSquares(values_x, values_y, numberOfReadings) {
+//http://dracoblue.net/dev/linear-least-squares-in-javascript/
+
+	var sum_x = 0;
+	var sum_y = 0;
+	var sum_xy = 0;
+	var sum_xx = 0;
+	var sum_yy = 0;
+	var count = 0;
+
+    	/*
+     	* We will use those variables for faster read/write access.
+     	*/
+    	var x = 0;
+    	var y = 0;
+		var values_length = numberOfReadings;
+// 		var values_length = values_x.length;
+
+    	/*
+     	* Calculate the sum for each of the parts necessary.
+     	*/
+    	for (var v = 0; v < values_length; v++) {
+		x = values_x[v];
+		y = values_y[v];
+		sum_x += x;
+		sum_y += y;
+		sum_xx += x*x;
+		sum_xy += x*y;
+		sum_yy += y*y;
+		count++;
+		}
+
+    	/*
+     	* Calculate m and b for the formular:
+     	* y = x * m + b
+     	*/
+    	m = (count*sum_xy - sum_x*sum_y) / (count*sum_xx - sum_x*sum_x);
+    	b = (sum_y/count) - (m*sum_x)/count;
+	var r2 = ((count*sum_xy - sum_x*sum_y) * (count*sum_xy - sum_x*sum_y)) / ((count*sum_xx - sum_x*sum_x) * (count*sum_yy - sum_y*sum_y));
+
+	var T2star = -(1 / m);
+	var R2star = 1000 / T2star;
+	var decPoints = 2;
+	if (organ == "liver") {
+		var decPoints = 1;
+		} 
+	if (strength == 1.5 && organ == "liver") {
+		// var IC = (-454.85 + (28.02 * R2star)) / 1000; // original calculation
+		var IC = 31.94 * Math.pow(T2star,-1.014); // revised calculation
+		}
+	if (strength == 1.5 && organ == "myocardium") {
+		var IC = 45 * Math.pow(T2star,-1.22);
+		}
+	if (strength == 3 && organ == "liver") {
+		R2star = (R2star / 2) - (11/2);
+		T2star = 1000 / R2star;
+		// var IC = (-454.85 + (28.02 * R2star)) / 1000; // original calculation
+		var IC = 31.94 * Math.pow(T2star,-1.014); // revised calculation
+		}
+	if (strength == 3 && organ == "myocardium") {
+		R2star = (R2star / 1.88) - (15/1.88);
+		T2star = 1000 / R2star;
+		var IC = 45 * Math.pow(T2star,-1.22);
+		}
+	return {
+		T2star: T2star.toFixed(1),
+		R2star: R2star.toFixed(1),
+		r2: r2.toFixed(3),
+		IC: IC.toFixed(decPoints)
+		}
+	}
+
+function drawOriginalCurve() {
+	//draw original curve & fit
+	var results = findLineByLeastSquares(TE, lnSI, validLength); //calculated m and b for complete dataset
+	ctx = document.getElementById('graphCanvas').getContext("2d");
+	height = document.getElementById('graphCanvas').height - 10;
+	width = document.getElementById('graphCanvas').width - 10;
+	maxY = Math.exp(lnSI[0]);
+	maxX = TE[validLength - 1];
+	unitY = height / maxY;
+	unitX = width / maxX;
+	ctx.fillStyle =  "#FFFFFF";
+	ctx.fillRect(0, 0, width + 10, height + 10);
+	ctx.fillStyle = "#000000";
+	ctx.fillRect(0, 0, 2, height + 10);
+	ctx.fillRect(0, height + 8, width + 10, 2);
+	for (n = 0; n < validLength; n++) {
+		ctx.fillStyle="#AAAAAA";
+		ctx.fillRect(parseFloat(TE[n]) * unitX, 10 + height - SI[n]*unitY, 4, 4);
+		ctx.font="12px Calibri";
+		if (height - SI[n]*unitY > height - 50) { var yOffset = -35; } else { var yOffset = 0; }
+		ctx.fillText(n + 1, -10 + parseFloat(TE[n]) * unitX, 25 + yOffset + height - SI[n]*unitY);
+		if (SD[n]) { ctx.fillText("(" + parseFloat((SI[n] / SD[n])).toFixed(1) + ")", -20 + parseFloat(TE[n]) * unitX, 35 + yOffset + height - SI[n]*unitY); }
+		}
+
+	for (x = 0; x < width + 10; x++) {
+		var xTE = x / width * TE[validLength - 1];
+		ctx.fillStyle="#CCCCCC";
+		ctx.fillRect(x, 10 + height - unitY * (Math.exp(b) * Math.exp(xTE*m)), 1, 1);
+		}
+	//end original curve & fit
+	}
+
+function calculateIC(method,snr) {
+	snr = snr || false;
+	var results;
+//	var numberOfReadings = document.getElementById('numberOfReadings').value;
+	for (n = 0; document.getElementById('TE[' + n + ']') != null; n++) {
+		if(TE[n-1] > parseFloat(document.getElementById('TE[' + n + ']').value) || document.getElementById('TE[' + n + ']').value == "") { 
+			break;
+			}
+		lnSI[n] = Math.log(document.getElementById('SI[' + n + ']').value);
+		TE[n] = parseFloat(document.getElementById('TE[' + n + ']').value);
+		SI[n] = parseFloat(document.getElementById('SI[' + n + ']').value);
+		}
+	validLength = n;
+	document.getElementById('result_validLength').innerHTML = "Valid readings: " + validLength;
+	document.getElementById('numberOfReadings').max = validLength;
+	drawOriginalCurve();
+
+	if (method == "snr") {
+		if (SD.length == 0) { // no SD data
+			document.getElementById('result_truncation').innerHTML = '<font color=ff0000><b>No Standard Deviation data found!</b></font>';
+			} else 
+			if (SI[0] < SI[1] || SI[1] < SI[2] || SI[0] < SI[2]) { // try to detect fluctuating signals
+			document.getElementById('result_truncation').innerHTML = '<font color=ff0000><b>FAILED: No Gradual Signal Degradation detected!</b></font>';
+			t = validLength;
+			} else {
+			for (t = 0; t < validLength; t++) {
+				if (parseFloat(SI[t] / SD[t]).toFixed(1) < snr) {
+					break;
+					}
+				}
+			if (t < 2) {
+				document.getElementById('result_truncation').innerHTML = '<font color=ff0000><b>FAILED: Very poor SNR!</b></font> Truncated to 2 readings.';
+				t = 2;
+				} else {
+				document.getElementById('result_truncation').innerHTML = 'Automated truncation to ' + t + ' readings.';
+				}
+			}
+		results = findLineByLeastSquares(TE, lnSI, t);
+		} else { //default to He et al
+		//truncate data and draw final curve, fit, and values
+		var truncatedT2star = [];
+		for (t = validLength; t > 0; t--) {
+			results = findLineByLeastSquares(TE, lnSI, t);
+			truncatedT2star[t] = results.T2star;
+			//alert(t + "\n" + results.r2 + "\n" + truncatedT2star[t] + "\n" + truncatedT2star[t+1] + "\n" + Math.abs((truncatedT2star[t]-truncatedT2star[t+1])/truncatedT2star[t+1]));
+			if (results.T2star > 20) { break; } //break if T2star is normal
+			if (results.r2 >= 0.995 && t == validLength) { break; } //break if all data points fitted results in R2 > 0.995
+			if (results.r2 >= 0.995 && Math.abs((truncatedT2star[t]-truncatedT2star[t+1])/truncatedT2star[t+1]) < 0.025) { break; }
+			}
+		if (t == 0) { //failed automated truncation
+			t = validLength;
+			results = findLineByLeastSquares(TE, lnSI, t);
+			document.getElementById('result_truncation').innerHTML = '<font color=ff0000><b>Failed automated truncation (He).</b></font>';
+			} else {
+			document.getElementById('result_truncation').innerHTML = 'Automated truncation to ' + t + ' readings.';
+			}
+		}
+
+//output results
+	document.getElementById('result_T2star').innerHTML = results.T2star;
+	document.getElementById('result_R2star').innerHTML = results.R2star; 
+	document.getElementById('result_IC').innerHTML = results.IC;
+	document.getElementById('result_r2').innerHTML = results.r2;
+	document.getElementById('numberOfReadings').value = t;
+
+//color the table
+	var borderColour;
+	if (organ == "liver") {
+		if (results.IC < 2) { 
+			borderColour = "#DF0"; 
+			document.getElementById('result_IC_severity').innerHTML = "Normal"; 
+			}
+		if (results.IC >= 2 && results.IC < 7) { 
+			borderColour = "#DD0"; 
+			document.getElementById('result_IC_severity').innerHTML = "Light";
+			}
+		if (results.IC >= 7 && results.IC < 15) { 
+			borderColour = "#FD0"; 
+			document.getElementById('result_IC_severity').innerHTML = "Moderate";
+			}
+		if (results.IC > 15) { 
+			borderColour = "#F00"; 
+			document.getElementById('result_IC_severity').innerHTML = "Severe";
+			}
+		}		
+	if (organ == "myocardium") {
+		if (results.IC < 1.16) { 
+			borderColour = "#DF0"; 
+			document.getElementById('result_IC_severity').innerHTML = "Normal"; 
+						}
+		if (results.IC >= 1.16 && results.IC < 1.65) { 
+			borderColour = "#DD0"; 
+			document.getElementById('result_IC_severity').innerHTML = "Light";
+			}
+		if (results.IC >= 1.65 && results.IC < 2.71) { 
+			borderColour = "#FD0"; 
+			document.getElementById('result_IC_severity').innerHTML = "Moderate";
+			}
+		if (results.IC > 2.71) { 
+			borderColour = "#F00"; 
+			document.getElementById('result_IC_severity').innerHTML = "Severe";
+			}
+		}		
+	document.getElementById('resultsTable').style.borderColor = borderColour;
+
+
+	for (n = 0; n < t; n++) {
+		ctx.fillStyle="#0000FF";
+		ctx.fillRect(parseFloat(TE[n]) * unitX, 10 + height - SI[n]*unitY, 4, 4);
+		ctx.font="12px Calibri";
+		if (height - SI[n]*unitY > height - 50) { var yOffset = -35; } else { var yOffset = 0; }
+		ctx.fillText(n + 1, -10 + parseFloat(TE[n]) * unitX, 25 + yOffset + height - SI[n]*unitY);
+		if (SD[n]) { ctx.fillText("(" + parseFloat((SI[n] / SD[n])).toFixed(1) + ")", -20 + parseFloat(TE[n]) * unitX, 35 + yOffset + height - SI[n]*unitY); }
+		}
+	for (x = 0; x < width + 10; x++) {
+		var xTE = x / width * TE[validLength - 1];
+		ctx.fillStyle="#FF0000";
+		ctx.fillRect(x, 10 + height - unitY * (Math.exp(b) * Math.exp(xTE*m)), 1, 1);
+		}
+	}
+
+function manualIC() {
+	var numberOfReadings = document.getElementById('numberOfReadings').value;
+	for (n = 0; document.getElementById('TE[' + n + ']') != null; n++) {
+		lnSI[n] = Math.log(document.getElementById('SI[' + n + ']').value);
+		TE[n] = parseFloat(document.getElementById('TE[' + n + ']').value);
+		SI[n] = parseFloat(document.getElementById('SI[' + n + ']').value);
+		}
+
+	drawOriginalCurve();
+
+	t = numberOfReadings;
+	var results = findLineByLeastSquares(TE, lnSI, t);
+	document.getElementById('result_truncation').innerHTML = 'Manual truncation to ' + t + ' readings.';
+
+	document.getElementById('result_T2star').innerHTML = results.T2star;
+	document.getElementById('result_R2star').innerHTML = results.R2star; 
+	document.getElementById('result_IC').innerHTML = results.IC;
+	document.getElementById('result_r2').innerHTML = results.r2;
+
+	//color the table
+	var borderColour;
+	if (organ == "liver") {
+		if (results.IC < 2) { 
+			borderColour = "#DF0"; 
+			document.getElementById('result_IC_severity').innerHTML = "Normal"; 
+			}
+		if (results.IC >= 2 && results.IC < 7) { 
+			borderColour = "#DD0"; 
+			document.getElementById('result_IC_severity').innerHTML = "Light";
+			}
+		if (results.IC >= 7 && results.IC < 15) { 
+			borderColour = "#FD0"; 
+			document.getElementById('result_IC_severity').innerHTML = "Moderate";
+			}
+		if (results.IC > 15) { 
+			borderColour = "#F00"; 
+			document.getElementById('result_IC_severity').innerHTML = "Severe";
+			}
+		}		
+	if (organ == "myocardium") {
+		if (results.IC < 1.16) { 
+			borderColour = "#DF0"; 
+			document.getElementById('result_IC_severity').innerHTML = "Normal"; 
+						}
+		if (results.IC >= 1.16 && results.IC < 1.65) { 
+			borderColour = "#DD0"; 
+			document.getElementById('result_IC_severity').innerHTML = "Light";
+			}
+		if (results.IC >= 1.65 && results.IC < 2.71) { 
+			borderColour = "#FD0"; 
+			document.getElementById('result_IC_severity').innerHTML = "Moderate";
+			}
+		if (results.IC > 2.71) { 
+			borderColour = "#F00"; 
+			document.getElementById('result_IC_severity').innerHTML = "Severe";
+			}
+		}				
+	document.getElementById('resultsTable').style.borderColor = borderColour;
+
+	for (n = 0; n < t; n++) {
+		ctx.fillStyle="#0000FF";
+		ctx.fillRect(parseFloat(TE[n]) * unitX, 10 + height - SI[n]*unitY, 4, 4);
+		ctx.font="12px Calibri";
+		if (height - SI[n]*unitY > height - 50) { var yOffset = -35; } else { var yOffset = 0; }
+		ctx.fillText(n + 1, -10 + parseFloat(TE[n]) * unitX, 25 + yOffset + height - SI[n]*unitY);
+		if (SD[n]) { ctx.fillText("(" + parseFloat((SI[n] / SD[n])).toFixed(1) + ")", -20 + parseFloat(TE[n]) * unitX, 35 + yOffset + height - SI[n]*unitY); }
+		}
+	for (x = 0; x < width + 10; x++) {
+		var xTE = x / width * TE[validLength - 1];
+		ctx.fillStyle="#FF0000";
+		ctx.fillRect(x, 10 + height - unitY * (Math.exp(b) * Math.exp(xTE*m)), 1, 1);
+		}
+	}
+
+function saveTE() {
+	var d = new Date();
+	d.setFullYear(2020);
+	for (n = 0; document.getElementById('TE[' + n + ']') != null; n++) {
+		TE[n] = parseFloat(document.getElementById('TE[' + n + ']').value);
+		document.cookie = n + '=' + TE[n] + ';expires=' + d.toUTCString(); 
+		}
+	alert('TEs saved as browser cookies!');
+	}
+	
+function loadTE() {
+	var ca = document.cookie.split(';');
+	if (ca.length == 12 || ca.length == 14) {
+		for(var n = 0; n < ca.length; n++) {
+			var cae = ca[n].split('=');
+			if(cae[0].indexOf('organ') == -1 && cae[0].indexOf('strength') == -1) {
+				document.getElementById('TE[' + parseInt(cae[0]) + ']').value = cae[1];
+				}
+			}
+		calculateIC();
+		} else {
+		alert('No valid TEs found in browser.');
+		}
+	}
+
+function saveOrganStrength() {
+	var d = new Date();
+	d.setFullYear(2020);
+	document.cookie = "organ=" + organ;
+	document.cookie = "strength=" + strength;
+	alert('Default organ & MRI field strength\nstored as browser cookies!');
+	}
+
+function loadOrganStrength() {
+	var ca = document.cookie.split(';');
+	if (ca.length == 12 || ca.length == 14) {
+		for(var n = 0; n < ca.length; n++) {
+			var cae = ca[n].split('=');
+			if(cae[0].indexOf('organ') != -1) {
+				organ = cae[1];
+				changeOption(organ);
+				}
+			if(cae[0].indexOf('strength') != -1) {
+				strength = cae[1];
+				changeOption(strength + 'T');
+				}
+			}
+		calculateIC();
+		} 
+	}
+
+function showHelp() {
+	document.getElementById('main').style.opacity = 0.3;
+	document.getElementById('help').style.left =((window.innerWidth - 700) / 2) + 'px';
+	document.getElementById('help').style.display = 'block';
+	}
+
+function hideHelp() {
+	document.getElementById('main').style.opacity = 1.0;
+	document.getElementById('help').style.display = 'none';
+	}
+
+function loadDemoData() {
+	var demoTE = [];
+	var demoSI = [];
+	demoTE[1] = [3.5, 8.1, 12.8, 17.3, 21.3, 25.1, 28.9, 32.7, 36.5, 40.3, 44.2, 48.0];
+	demoSI[1] = [371, 328, 283, 247, 176, 157, 172, 166, 133, 109, 75, 66];
+	demoTE[2] = [1.0, 1.8, 2.5, 3.3, 4.1, 4.9, 5.6, 6.4, 7.2, 8.0, 8.7, 9.5];
+	demoSI[2] = [893, 518, 305, 190, 135, 87, 76, 72, 66, 50, 57, 55]; 
+	demoTE[3] = [1, 3, 3.5, 4, 4.5, 5, 5.5, 8, 9, 10, 12, 15];
+	demoSI[3] = [134, 114, 99, 81, 70, 59, 49, 40, 35, 28, 20, 15];
+	demoTE[4] = [2.6, 4.9, 7.2, 9.6, 11.9, 14.2, 16.5, 18.8];
+	demoSI[4] = [1287, 1223, 1228, 1189, 1095, 1045, 879, 862];
+	demoTE[5] = [1.18, 2.15, 3.3, 4.1, 5.5, 6.2, 7.8, 9, 10, 12, 14, 16];
+	demoSI[5] = [165, 156, 148, 140, 129, 120, 112, 106, 100, 80, 50, 30];
+	var demoSet = document.getElementById('demoData').value;
+	if (demoSet != 0) {
+		for (n = 0; n < 12; n++) {
+			if (demoTE[demoSet][n] == null) {
+				document.getElementById('TE[' + n + ']').value = "";
+				document.getElementById('SI[' + n + ']').value = "";
+				} else {
+				document.getElementById('TE[' + n + ']').value = demoTE[demoSet][n];
+				document.getElementById('SI[' + n + ']').value = demoSI[demoSet][n];
+				}
+			}
+		}
+	calculateIC();
+	}	
+</script>
+	
+<style> 
+
+.inputs {
+    height: 25px;
+    border: 3px solid #E2E6EB;
+    border-radius: 5px;
+    -webkit-transition: all 0.3s ease-out;
+    -moz-transition: all 0.3s ease-out;
+    -ms-transition: all 0.3s ease-out;
+    -o-transition: all 0.3s ease-out;
+    transition: all 0.3s ease-out;
+    width: 70px;
+    text-align: right;
+    padding: 0px 10px;
+}
+
+.inputs:focus {
+    border-color: #CBB;
+    outline: none;
+}
+
+.inputSI {
+    height: 25px;
+    border: 3px solid #EBE6E2;
+    border-radius: 5px;
+    -webkit-transition: all 0.3s ease-out;
+    -moz-transition: all 0.3s ease-out;
+    -ms-transition: all 0.3s ease-out;
+    -o-transition: all 0.3s ease-out;
+    transition: all 0.3s ease-out;
+    width: 70px;
+    text-align: right;
+    padding: 0px 10px;
+}
+
+.inputSI:focus {
+    border-color: #BBB;
+    outline: none;
+}
+
+.buttons {
+    height: 25px;
+    border: 3px solid #E2E6EB;
+    border-radius: 5px;
+    -webkit-transition: all 0.3s ease-out;
+    -moz-transition: all 0.3s ease-out;
+    -ms-transition: all 0.3s ease-out;
+    -o-transition: all 0.3s ease-out;
+    transition: all 0.3s ease-out;
+    width: 70px;
+    font-size: 70%;
+    text-align: center;
+    margin-bottom: 5;
+}
+
+.optionButton {
+    height: 25px;
+    border: 3px solid #E2E6EB;
+    background: #CCCCCC;
+    border-radius: 5px;
+    -webkit-transition: all 0.3s ease-out;
+    -moz-transition: all 0.3s ease-out;
+    -ms-transition: all 0.3s ease-out;
+    -o-transition: all 0.3s ease-out;
+    transition: all 0.3s ease-out;
+    width: 90px;
+    font-size: 80%;
+    text-align: center;
+    color: #888888;
+
+}
+
+input[type=range]::-webkit-slider-runnable-track {
+    width: 300px;
+    height: 10px;
+    background: #ddd;
+    border: none;
+    border-radius: 3px;
+}
+
+input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    border: none;
+    height: 16px;
+    width: 16px;
+    border-radius: 50%;
+    background: goldenrod;
+    margin-top: -4px;
+}
+
+input[type=range]:focus {
+    outline: none;
+}
+
+</style> 
+
+<div  id="main">
+<body onLoad="loadOrganStrength(); calculateIC()">
+<center>
+<font size=+3 face="calibri">T2* Relaxometry for Iron Concentration</font>
+<table><tr><td colspan=2>
+<input type="button" value="Liver" onClick=changeOption('liver') id="optionLiver" class="optionButton">
+<input type="button" value="Myocardium" onClick=changeOption('myocardium') id="optionMyocardium" class="optionButton">
+<input type="button" value="1.5T" onClick=changeOption('1.5T') id="option1.5T" class="optionButton">
+<input type="button" value="3T" onClick=changeOption('3T') id="option3T" class="optionButton">
+</td></tr>
+<tr><td><font size=-1><a href="javascript:showHelp()">Instructions & Documentation</a></font></td><td align=right><font size=-1><a href="javascript:saveOrganStrength()">Save as default</a></font></td></tr></table>
+
+<script>
+document.getElementById('optionLiver').style.backgroundColor = "#FFFFFF";
+document.getElementById('optionLiver').style.borderColor = "#00DD00";
+document.getElementById('optionLiver').style.color = "#000000";
+document.getElementById('option1.5T').style.backgroundColor = "#FFFFFF";
+document.getElementById('option1.5T').style.borderColor = "#00DD00";
+document.getElementById('option1.5T').style.color = "#000000";
+</script>
+
+<form id="TESI">
+
+<table border=0 width=800>
+<tr><td></td><td align=center>TE</td><td align=center>SI</td><td rowspan=13 valign=center align=center><canvas width=510 height=310 id="graphCanvas"></canvas></td></tr>
+
+<script>
+//load initial table from HTTP-GET values (?TEstring=1,2,3,4,5,6,7,8&SIstring=8,7,6,5,4,3,2,1)
+function getUrlVars() {
+    var vars = [];
+    var parts = window.location.href.replace(/[?&]+([^=&]+)=([^&]*)/gi, function(m,key,value) {
+        vars[key] = value;
+    });
+    return vars;
+}
+var inpTE = getUrlVars()["TEstring"];
+var inpSI = getUrlVars()["SIstring"];
+var inpSD = getUrlVars()["SDstring"];
+
+if (inpTE == undefined || inpSI == undefined) {
+	inpTE = "1,2,3,4,5,6,7,8,9,10,11,12";
+	inpSI = "12,11,10,9,8,7,6,5,4,3,2,1";
+	}
+if (inpSD != undefined) {
+	SD = inpSD.split(',');
+	}
+
+var inputTE = inpTE.split(',');
+var inputSI = inpSI.split(',');
+
+
+if (getUrlVars()["patientName"] != undefined) {
+	document.write('<br>Name: ' + getUrlVars()["patientName"].replace(/%20/g,' '));
+	document.write(' | ID: ' + getUrlVars()["patientMRN"].replace(/%20/g,' '));
+	document.write(' | Date: ' + getUrlVars()["studyDate"] + '<br><br>');
+	}
+
+for (n = 0; n < 12; n++) {
+	if (inputTE[n] == undefined || inputSI[n] == undefined) { 
+		inputTE[n] = 0;
+		inputSI[n] = 0;
+		}
+	document.write('<tr><td>' + (n+1) + '</td>');
+	document.write('<td><input type="text" size="6" id="TE[' + n + ']" value="' + inputTE[n] + '" onchange="calculateIC()"></td>');
+	document.write('<td><input type="text" size="6" id="SI[' + n + ']" value="' + inputSI[n] + '" onchange="calculateIC()"></td></tr>\n');
+	}
+
+/*
+<tr><td>1</td><td><input type="text" size="6" id="TE[0]" value="3.5" onchange="calculateIC()"></td><td><input type="text" size="6" id="SI[0]" value="371" onchange="calculateIC()"></td></tr>
+<tr><td>2</td><td><input type="text" size="6" id="TE[1]" value="8.1" onchange="calculateIC()"></td><td><input type="text" size="6" id="SI[1]" value="328" onchange="calculateIC()"></td></tr>
+<tr><td>3</td><td><input type="text" size="6" id="TE[2]" value="12.8" onchange="calculateIC()"></td><td><input type="text" size="6" id="SI[2]" value="283" onchange="calculateIC()"></td></tr>
+<tr><td>4</td><td><input type="text" size="6" id="TE[3]" value="17.3" onchange="calculateIC()"></td><td><input type="text" size="6" id="SI[3]" value="247" onchange="calculateIC()"></td></tr>
+<tr><td>5</td><td><input type="text" size="6" id="TE[4]" value="21.3" onchange="calculateIC()"></td><td><input type="text" size="6" id="SI[4]" value="176" onchange="calculateIC()"></td></tr>
+<tr><td>6</td><td><input type="text" size="6" id="TE[5]" value="25.1" onchange="calculateIC()"></td><td><input type="text" size="6" id="SI[5]" value="157" onchange="calculateIC()"></td></tr>
+<tr><td>7</td><td><input type="text" size="6" id="TE[6]" value="28.9" onchange="calculateIC()"></td><td><input type="text" size="6" id="SI[6]" value="172" onchange="calculateIC()"></td></tr>
+<tr><td>8</td><td><input type="text" size="6" id="TE[7]" value="32.7" onchange="calculateIC()"></td><td><input type="text" size="6" id="SI[7]" value="166" onchange="calculateIC()"></td></tr>
+<tr><td>9</td><td><input type="text" size="6" id="TE[8]" value="36.5" onchange="calculateIC()"></td><td><input type="text" size="6" id="SI[8]" value="133" onchange="calculateIC()"></td></tr>
+<tr><td>10</td><td><input type="text" size="6" id="TE[9]" value="40.3" onchange="calculateIC()"></td><td><input type="text" size="6" id="SI[9]" value="109" onchange="calculateIC()"></td></tr>
+<tr><td>11</td><td><input type="text" size="6" id="TE[10]" value="44.2" onchange="calculateIC()"></td><td><input type="text" size="6" id="SI[10]" value="75" onchange="calculateIC()"></td></tr>
+<tr><td>12</td><td><input type="text" size="6" id="TE[11]" value="48.0" onchange="calculateIC()"></td><td><input type="text" size="6" id="SI[11]" value="66" onchange="calculateIC()"></td></tr>
+*/
+</script>
+
+<tr rowspan=3><td></td><td><input type="button" value="Save TEs" onClick="javascript:saveTE()" class="buttons"><br><input type="button" value="Load TEs" onClick="javascript:loadTE()" class="buttons"></td><td></td><td align=center><font face="calibri"><b><div id="result_validLength" style="display: inline"></div> | <div id="result_truncation" style="display: inline"></div></b></font><br><br>
+Truncation: <input type="button" class="buttons" value="<" style="width: 30;" onClick="javascript:document.getElementById('numberOfReadings').value = parseInt(document.getElementById('numberOfReadings').value) - 1; manualIC();">
+<input type="range" min="2" max="12" id="numberOfReadings" onClick= javascript:manualIC() onChange=javascript:manualIC()>
+<input type="button" class="buttons" value=">" style="width: 30;" onClick="javascript:document.getElementById('numberOfReadings').value = parseInt(document.getElementById('numberOfReadings').value) + 1; manualIC();">
+<input type="button" value="Auto (He)" onClick=javascript:calculateIC('he') class=buttons>
+</td></tr>
+<tr><td colspan=3></td><td align=center>
+Auto (SNR) <input type="button" value="1.5" onClick=javascript:calculateIC('snr',1.5) class=buttons> <input type="button" value="2.0" onClick=javascript:calculateIC('snr',2.0) class=buttons> <input type="button" value="2.5" onClick=javascript:calculateIC('snr',2.5) class=buttons>
+<font color=ff0000>[experimental]</font>
+</td></tr>
+</table>
+</form>
+
+<table width=800>
+<tr><td width=200 align=center><canvas id="dtCanvas" width=0 height=0></canvas></td>
+<td width=600 align=center>
+<table id="resultsTable" width=500 border=1>
+<tr><td align=center>T2*</td><td align=center>R2*</td><td align=center valign=center><div id="result_header" style="display: inline">LIC</div></td><td align=center>R<sup>2</sup></td></tr>
+<tr><td align=center><br><font size=+1><b><div id="result_T2star" style="display: inline"></div>ms</b></font><br><br></td>
+<td align=center><br><font size=+1><b><div id="result_R2star" style="display: inline"></div>Hz</b></font><br><br></td>
+<td align=center><font size=+1><b><div id="result_IC" style="display: inline"></div>mg/g<br><div id="result_IC_severity" style="display: inline"></div></b></font></td>
+<td align=center><br><font size=+1><b><div id="result_r2" style="display: inline"></div></b><br><br></font></td></tr>
+<tr><td colspan=4 align=center><font size=-1><div id="result_ranges" style="display: inline">LIC: < 2 [normal] | 2 - 7  [light] | 7 - 15 [moderate] | > 15 [severe]</div></font></td></tr></table>
+<br><input type="button" value="Print" class="buttons" onClick=javascript:window.print()>
+</td></tr></table>
+<br>
+<hr size=1 width=800>
+<table width=800>
+<tr><td width=200></td>
+<td align=center>
+<font size=-1>part of the mcdcm project. free for non-commercial use.<br>
+</font>
+</td>
+<td width=200 align=right>
+<font size=-1>
+<select id="demoData" class="inputSI" style="width: 180px;" onChange="loadDemoData()">
+<option value="0">Demo data</option>
+<option value="1">Liver: Normal</option>
+<option value="2">Liver: High LIC</option>
+<option value="3">Liver: Excel</option>
+<option value="4">Heart: Normal</option>
+<option value="5">Heart: Excel</option>
+</select>
+</font>
+</td>
+</tr></table>
+
+</center>
+</div>
+
+<script>
+// if image available, show it
+if (sessionStorage.dt) {
+	var dtCanvas = document.getElementById('dtCanvas');
+	var dtC = dtCanvas.getContext('2d');
+	var dtImg = new Image;
+	dtImg.onload = function() {
+		dtCanvas.height = getUrlVars()['row'];
+		dtCanvas.width = getUrlVars()['col'];
+		dtC.drawImage(dtImg,0,0);
+		dtCanvas.style.width = 180;
+		dtCanvas.style.height = 180 * getUrlVars()['row'] / getUrlVars()['col'];
+		};
+	dtImg.src = sessionStorage.dt;
+	}
+</script>
+
+<div id="help" style="display: none; position: absolute; top: 50px; z-index: 10;">
+<table width=700 bgcolor=ffffff border=1 cellpadding=10 cellspacing=0>
+<tr><td align=center bgcolor=#e3e6e9>
+<font size=+1 face="calibri"><b>Instructions & Documentation</b></font></td></tr>
+<tr><td colspan=3>
+<b>Instructions:</b><br>
+ 1. Select the organ & field strength<br>
+ 2. Enter the TEs based on your protocol<br>
+ 3. Draw the ROIs on each slice<br>
+ 4. Enter the SIs corresponding to the TEs of each slice<br>
+ 5. Truncation is applied automatically. Use slider to adjust trunction manually<br>
+ <br>
+<b>Saving Defaults:</b><br>
+ 1. After selecting the organ & field strength, click on "Save as default"<br>
+ 2. After entering the TEs of your default protocol, click on "Save TEs"<br>
+ 3. These are saved as browser cookies. Please enable cookies for your browser.<br>
+ 4. The default organ & field strengh are loaded automatically next time<br>
+ 5. To load the previously saved TEs, click on "Load TEs"<br>
+ <br>
+<font size=-1>
+<b>Technical Info:</b><br>
+ 1. Line is fitted using least-squares method<br>
+ 2. Automated truncation method is based on He <i>et al</i> (2013) for myocardial studies.<br>
+<font size=-2> (Note: due to absence of data, this method is applied to liver studies as well.)</font><br>
+ 3. Automatic truncation has the following logic:<br>
+<font size=-2>
+ - if R<sup>2</sup> is greater than 0.995 when all readings are measured (no truncation), accept results<br>
+ - if R<sup>2</sup> is less than 0.995, truncate last reading and recalculate R<sup>2</sup><br>
+ - once R<sup>2</sup> is greater than 0.995, <b>continue</b> truncating until the T2* is greater than 97.5% of the preceding T2*, then accept the truncated results<br>
+ - if T2* is greater than 20ms at any time, accept the truncated results<br>
+ - if none of the conditions are met, do not accept any results<br></font>
+4. If loaded from mcdcm viewer, SNR for each ROI is displayed on graph within parentheses.<br><br>
+<b>Program Info:</b><br>
+ 1. Tested on Chrome & IE 11<br>
+ 2. Fully coded in HTML5 / Javascript / CSS without external dependancies (including images)<br>
+ 3. For off-line use, just save as HTML file in your drive<br>
+ 4. Open-source and freely distributable for non-commercial use but credits & references must be maintained<br>
+<br>
+<font size=-2><b>References:</b><br>
+Carpenter, John-Paul, et al. "On myocardial siderosis and left ventricular dysfunction in hemochromatosis." J Cardiovasc Magn Reson 15.1 (2013): 24.<br>
+Hankins, Jane S., et al. "R2* magnetic resonance imaging of the liver in patients with iron overload." Blood 113.20 (2009): 4853-4855.<br>
+He, Taigang, et al. "Automated truncation method for myocardial T2* measurement in thalassemia." Journal of Magnetic Resonance Imaging 37.2 (2013): 479-483.<br><br></font>
+<b>Sourced from Excel Worksheet by:</b><br>
+Juliano Lara Fernandes, University of Campinas - Brazil [jlaraf (at) fcm.unicamp.br]<br>
+Ulrik Gram, Novartis Pharma AG - Switzerland [ulrik.gram (at) novartis.com]<br><br>
+Authorized mirror. <font size=-2>Dif-tor heh smusma \\//_</font>
+</font>
+<center>
+<input type="button" value="Close" class="buttons" onClick="javascript:hideHelp()">
+</center>
+</td></tr></table>
+</div>
+
+

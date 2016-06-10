@@ -1,0 +1,2773 @@
+<!--
+
+ Copyright (c) 2016 mcdcm project. All rights reserved.
+
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions are met:
+
+ 1. Redistributions of source code must retain the above copyright notice,
+ this list of conditions and the following disclaimer.
+
+ 2. Redistributions in binary form must reproduce the above copyright
+ notice, this list of conditions and the following disclaimer in
+ the documentation and/or other materials provided with the distribution.
+
+ 3. The names of the authors may not be used to endorse or promote products
+ derived from this software without specific prior written permission.
+
+ THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESSED OR IMPLIED WARRANTIES,
+ INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
+ ANY CONTRIBUTORS TO THIS SOFTWARE BE LIABLE FOR ANY DIRECT, INDIRECT,
+ INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+ OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+-->
+
+<title>mcdcm viewer</title>
+<script type="text/javascript" src="zip/zip.js"></script>
+<script type="text/javascript" src="zip/lossless.js"></script>
+<script type="text/javascript" src="zip/openjpeg.js"></script>
+
+<script>
+var reverseProxiedOrthanc = false; // set to true if running Orthanc through reverse proxy. Default is false, running through serveFolders plugin
+//var orthanc = 'http://localhost/orthanc'; // define Orthanc address if using reverse proxy (set reverseProxiedOrthanc above to true). Default is commented
+zip.workerScriptsPath = "zip/"; //zip.js, inflate.js, deflate.js and z-worker.js need to be in a subfolder; default is "zip/"
+var backgroundImages = ['lights.jpg']; //['iron.jpg', 'trektunic.jpg', 'spock.jpg']; //background images --- for fun :P
+var currentBackground = 0;
+var effectTransparent = false;
+var effectBackground = true;
+</script>
+		
+<style>
+body {
+    font-family: Calibri;
+	}
+input.textbox {
+	text-align: center;
+    width: 2.5em;  height: 1.8em;
+	border: 3px solid #62667B;
+    border-radius: 5px;
+	}
+
+input.window {
+    width: 7em;  height: 1.8em;
+	border: 3px solid #62667B;
+    border-radius: 5px;
+	}
+
+input.window:focus {
+    border-color: #66F;
+    outline: none;
+	}
+
+input.tool {
+    width: 25px;  height: 25px;
+	font-size: 10;
+	background: #CCC;
+	border: 3px solid #666;
+    border-radius: 5px;
+	}
+
+input.tool:focus {
+    border-color: #66F;
+    outline: none;
+	}
+
+canvas {
+	cursor: all-scroll;
+	border: 3px solid #666;
+	border-radius: 5px;
+    animation: none;
+	}
+
+/* Scroll bar */	
+input[type=range] {
+	-webkit-appearance: none; /* Hides the slider so that custom slider can be made */
+	width: 100%; /* Specific width is required for Firefox. */
+	-webkit-transform: rotate(90deg);
+	-moz-transform: rotate(90deg);
+	}
+
+input[type=range]::-webkit-slider-runnable-track {
+  height: 8px;
+  cursor: pointer;
+//  box-shadow: 1px 1px 1px #000000, 0px 0px 1px #0d0d0d;
+  background: #666;
+  border-radius: 0px;
+  border: 0px;
+}
+
+input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    border: none;
+    height: 16px;
+    width: 16px;
+    border-radius: 50%;
+    background: lightblue;
+    margin-top: -4px;
+}
+
+input[type=range]:focus {
+    outline: none;
+}
+
+
+/* Animation Effects */
+@keyframes effectGlow {
+    50% {box-shadow: 0px 0px 30px #ccf;}
+	}
+@keyframes effectBackgroundGrey {
+	50% {background-color: rgba(60, 60, 60, 0.5);}
+	}
+@keyframes effectBackgroundBlue {
+	50% {background-color: rgba(30, 60, 60, 0.5);}
+	}
+	
+	
+</style>
+
+<body bgcolor=#111111 text=#ffffff link=#ffff00 vlink=#ffff00>
+<center>
+<span id="seriesDump"></span>
+<div id="effectBackground">
+<img id="backgroundImage" src='lights.jpg' style='position:fixed;top:0px;left:0px;width:100%;height:100%;z-index:-1;'>
+</div>
+
+<div id="viewPort" style="position:fixed; top:60; left:0; width:100%; display:none">
+<canvas class="canvas" id="myCanvas" height="300" width="300"></canvas><br>
+<font size=-1><output id="imageinfo"></output><br>
+<a id="dl" download="Canvas.png" href="#">Export Slice</a><br></font><br><br>
+</div>
+
+<div id="divScrollBar" style="position:fixed; top:250px; left: 0px; display:none">
+<input type="range" min="1" max="12" step="1" id="scrollBar" onChange="slideScrollBar()">
+</div>
+
+<div id="toolbox" style="position:fixed; width:140px; top:60; left:10; display:none; word-break:break-all;">
+<table border=1 bgcolor=#000033 cellpadding=10 style="background-color: rgba(20, 40, 50, 0.5);"><tr><td><center>
+<input type="button" class="window" value="Home" onClick="resetAll()"><br>
+<hr size=1>
+&#x263C<br>
+<input type="button" class="window" value="Default" onClick="setWindow('default','default')"><br>
+<span id="MenuCTWindows">
+<input type="button" class="window" value="Brain" onClick="setWindow(40,80)"><br>
+<input type="button" class="window" value="Subdural" onClick="setWindow(70,170)"><br>
+<input type="button" class="window" value="Soft Tissue" onClick="setWindow(40,400)"><br>
+<input type="button" class="window" value="Lung" onClick="setWindow(-600,1200)"><br>
+<input type="button" class="window" value="Bone" onClick="setWindow(450,1500)"><br>
+</span>
+<input type="button" class="window" value="Invert" onClick="invertWindow()"><br>
+<hr size=1>
+&#x26F6<br>
+<input type="button" class="tool" id="iconLine" value="I" title="Draw Line" onClick="changeLeftButtonMode('line')">
+<input type="button" class="tool" id="iconAngle" value="&#x2227" title="Draw Angle" onClick="changeLeftButtonMode('angle')">
+<input type="button" class="tool" id="iconPixel" value="&#x25C9" title="Pixel Lens" onClick="changeLeftButtonMode('pixel')">
+<input type="button" class="tool" id="iconPolygon" value="&#2616" title="Draw Polygon (EXPERIMENTAL)" onClick="changeLeftButtonMode('polygon')">
+<input type="button" class="tool" id="iconCircle" value="O" title="Draw Circle ROI" onClick="changeLeftButtonMode('circle')">
+<input type="button" class="tool" id="iconParallel" value="||" title="Draw Parallel Lines" onClick="changeLeftButtonMode('parallel')"><br>
+<span id="MenuT2Star">
+<hr size=1>
+<input type="button" class="window" id="iconT2Star" value="Calc T2*" title="Launch T2* Calculator" onClick="loadT2Star()" DISABLED><br>
+</span>
+<hr size=1>
+<input type="text" id="overlay1" size=1 class="textbox" > | <input type="text" id="overlay2" size=1 class="textbox" ><br>
+<input type="button" class="window" value="Overlay" onClick="loadOverlay()"><br>
+<hr size=1>
+&#x2728<br>
+<input type="button" class="tool" id="iconGlow" value="&#x2237" title="Toggle Glow Effect" onClick="changeEffect('glow')">
+<input type="button" class="tool" id="iconTransparent" value="&#x25CC" title="Toggle Transparent Effect" onClick="changeEffect('transparent')">
+<input type="button" class="tool" id="iconBackground" value="&#x224B" title="Toggle Background" onClick="changeEffect('background')" style="background: #CCF; border-color: #66F;">
+<input type="button" class="tool" id="iconNextBackground" value="&#x224A" title="Next Background" onClick="changeEffect('nextBackground')" style="background: #CCC; border-color: #666;"><br>
+<hr size=1>
+<span id="seriesList"></span>
+<hr size=1>
+<input type="button" class="window" value="New Patient" onClick="javascript:window.location = 'mviewer.html';"><br>
+</center>
+</td></tr></table>
+</div>
+
+<div id="patientInfo" style="position:fixed; top:60; right:10; display:none; z-index: 100">
+<table><tr><td align=right>
+<span id="dcmInfo"></span>
+</td></tr></table>
+</div>
+
+<div id="techInfo" style="position:fixed; bottom:60; left:10; display:none; z-index: 100">
+<table><tr><td>
+<span id="dcmInfo2"></span>
+</td></tr></table>
+</div>
+
+<div id="sideInfo" style="position:fixed; text-align: left; width:140px; top:60; right:10; display:none; z-index: 100">
+<span id="dcmInfo3"></span>
+<span id="dcmInfo4"></span>
+</div>
+
+<div id="fileLoaderLanding" style="position:absolute; top:100; left:0; width:100%; display:block">
+<table width=70% border=2 style="background-color: rgba(20, 40, 50, 0.5);"><tr><td align=center>
+<br><font size=+2><span id="fileProgressArea"><br><br>
+<table width=100%><tr><td colspan=3 align=center>
+<font size=+2>Drop DICOM / ZIP Files Here</font><br>
+<font size=-1>DICOM files <b>must</b> be in uncompressed format (Explicit VR Little-Endian)</font><br><br><br>
+<font color=#ffffff> or <input type="file" id="dcmFiles" multiple></font><br><br><hr size=1></td></tr>
+<tr>
+<!--td valign=top align=center><font size=+1><b>Orthanc</b><br><br>
+ServeFolders plug-in<br><br>
+<font size=-1>index.html?series=(OrthancSeriesHash)</font></font></td>
+<td valign=top align=center><font size=+1><b>Direct Drag-Drop</b><br><br>
+Single or Multiple<br>
+Uncompressed DICOM Files<br><br>
+ZIP File<br><br>
+Only 1 series at a time</font></td>
+<td valign=top align=center><font size=+1><b>Through HTTP Get</b><br><br>
+Filelist in JSON format<br><br>
+ZIP File</font></td-->
+<td valign=top colspan=1 align=center width=33%>
+<font size=+1><b>T2* Samples:</b><br><br>
+<a href="?file=samples/mrlivers.zip">MRI Liver T2* (Siemens)</a> 2Mb<br>
+<a href="?file=samples/mrliverp.zip">MRI Liver T2* (Philips)</a> 3Mb<br>
+<a href="?file=samples/mrheartp.zip">MRI Heart T2* (Philips)</a> 1Mb<br>
+</font>
+</td>
+<td valign=top colspan=1 align=center width=33%>
+<font size=+1><b>CT Samples:</b><br><br>
+<a href="?file=samples/ctbrain.zip">CT Brain (Siemens)</a> 4Mb<br>
+<a href="?file=samples/ctabdt.zip">CT Abdomen (Toshiba)</a> 16Mb<br>
+<a href="?file=samples/ctchestt.zip">CT Chest [Ca Score Recon] (Toshiba)</a> 6Mb<br>
+<a href="?file=samples/ctknees.zip">CT Knees (Siemens)</a> 9Mb<br>
+</font>
+</td>
+<td valign=top colspan=1 align=center width=33%>
+<font size=+1><b>Misc Samples:</b><br><br>
+<a href="?file=samples/mrneckcyst.zip">MRI Neck [T2 Coronal] (Siemens)</a> 5Mb<br>
+<a href="?file=samples/mrabdcors.zip">MRI Abd [T2 Coronal] (Siemens)</a> 2Mb<br>
+<a href="?file=samples/crchestk.zip">CXR [CR] (Kodak)</a> 5Mb<br>
+<a href="?file=samples/dxchestk.zip">CXR [DX] (Kodak)</a> 7Mb<br>
+</font>
+</td>
+</tr></table>
+<br><hr size=1>
+<font size=+2>Note: Optimized for <a href=http://google.com/chrome>Google Chrome</a></font><br>
+<font size=-1>(Also runs on Firefox and IE Edge <b>but</b> with performance issues.)<hr size=1 width=300>
+Works on Windows, OS X and faster Androids. Not tested on iOS.<br>
+Supports mouse, multi-touch and <a href=http://www.leapmotion.com target="_blank">leap motion</a><br>
+Recommended device: Surface Pro 3.</font></span></font><br><br>
+[ <a href=tutorial.html target=_blank>T2* Tutorial for OsiriX</a> ]<br>
+[ <a href=http://isodense.com/mcdcm/mcdcm.zip>Latest Off-line Version</a> ]<br><br>
+</td></tr></table><br>
+</div>
+
+<div id="header" style="position:fixed; top:0; left:0; width:100%">
+<table width=100% border=0 style="background-color: rgba(20, 40, 50, 0.5);"><tr><td align=center>
+<font size=+2 ><b>mcdcm viewer</b></font><br>
+<font size=-1><span id="deviceInfo"></span></font>
+</td></tr></table>
+</div>
+
+<div id="footer" style="position:fixed; bottom:0; left:0; width:100%">
+<font size=-1><span id="fileProgressBar"></span><span id="leapStatus"></span></font>
+<table width=100% border=0 style="background-color: rgba(20, 40, 50, 0.5);"><tr><td align=center>
+<font size=-1>
+&#x2622 tested on <a href=http://chrome.google.com target="_blank">chrome</a> | &copy2014 - 2016 mcdcm project | <a href="javascript:toggleInfoDiv('disclaimerDiv')">licensing</a> | <a href="javascript:toggleInfoDiv('infoDiv')">info</a> | <a href="javascript:toggleInfoDiv('helpDiv')">instructions</a></font>
+</td></tr></table>
+</div>
+
+</center>
+</body>
+
+<div id="showCurveDiv" style="display: none; position: absolute; top: 10; left: 10; width: 900; height: 800; background-color: #FFFFFF; z-index: 200;">
+<center>
+<table bgcolor=000000 width=100% cellpadding=0 cellspacing=0><tr><td align=center><a href="javascript:closeShowCurveDiv()"><b>[ CLOSE ]</b></a></td></tr></table>
+<iframe id="showCurveIFrame" width=880 height=770></iframe>
+</center></div>
+
+
+
+<div id="infoDiv" style="display: none; position: fixed; top: 5%; left: 5%; width: 650; height: 90%; background-color: rgba(20, 40, 50, 0.95); z-index: 150;">
+<p align=right><input type="button" value="X" class="tool" onClick="javascript:toggleInfoDiv('infoDiv')">&nbsp&nbsp</p>
+<center>
+<table width=600 border=0 cellpadding=10>
+<tr><td  colspan=2 align=center><font size=+2><b>mcdcm viewer</b></font><br>
+A(nother) HTML5/Javascript DICOM Viewer
+</td></tr>
+<tr>
+<td width=50% align=left valign=top>
+<font size=-1>
+<b>Background:</b><br>
+I'll be honest. I last programmed HTML when the &ltDIV&gt was first introduced in Netscape Communicator.<br>
+Turns out that medical school & post-graduate specialist training takes up most of your time. Also - 3 kids.<br>
+This viewer came about after I discovered <a href="http://www.orthanc-server.com">orthanc</a> which allowed me to retrieve DICOM data through a web interface.<br>
+Fast forward a few months, and I've realized that reading a DICOM file directly wasn't really that difficult. *facepalm*<br>
+<br>
+<b>Features:</b><br>
+<li> Entire code is kept in a single file.
+<li> Drag & drop functionality. Can be used immediately without configuration.
+<li> Directly plugged into Orthanc using the ServeFolders plug-in
+<br><br>
+<b>Limitations:</b><br>
+<li> Slow loading for larger studies / multiple slices. E.g. A CT study of 120 slices takes about 1 minute.
+<li> Incomplete DICOM without VR declaration cannot be parsed.
+<li> <strike>Supports only Implicit VR Little Endian pixel data. (No support for JPEG, etc)</strike>.
+<br><br>
+
+</font>
+</td>
+<td width=50% align=left valign=bottom>
+<font size=-2>
+<b>Changelog:</b>
+<br>(9/6/2016 & 10/6/2016)
+<li>JPEG Lossless (57 & 70) Support!
+<li>JPEG 2000 (91)!
+<br>(21/5/2016)
+<li>Multiple Series Support! :P
+<br>(13/10/2015)
+<li>Improved viewing performance, currently supports 14x17 CR at full resolution
+<li>Reduces resolution for mobile devices
+<br>(9/10/2015)
+<li>Drag-drop Zip file support through zip.js
+<li>Support GET loading (?file=filelist.txt)
+<br>(6/10/2015)
+<li>Touch and Multitouch support!
+<li>Superfluous effects
+<br>(3/10/2015)
+<li>Cosmetic changes
+<br>(23/04/2015)
+<li>Automatic canvas resize to match window size
+<li>Added angle measurement and overlay (for TT-TG measurement)
+<br>(26/12/2014)
+<li>Added support for US (RGB)
+<li>Fixed loading bug for Chrome in OS X
+<br>(23/12/2014)
+<li>Parsed pixel data is now kept in a multi-dimensional array (pixelArray[instanceNumber][]). Previously, t'was kept as a string which needed to be .split(). Result: improved speed and able to load up to 120 slices.
+<li>Corrected panning and zooming bug
+<li>Canvas data is not re-written unless currentSlice or windowing is changed. Result: improved speed.
+<br>
+</td></font>
+</tr></table>
+
+<input type="button" value="Close" class="window" onClick="javascript:toggleInfoDiv('infoDiv')"></center>
+</div>
+
+<div id="helpDiv" style="display: none; position: fixed; top: 5%; left: 5%; width: 650; height: 90%; background-color: rgba(20, 40, 50, 0.95); z-index: 150;">
+<p align=right><input type="button" value="X" class="tool" onClick="javascript:toggleInfoDiv('helpDiv')">&nbsp&nbsp</p>
+<center>
+<table width=600 border=0 cellpadding=10>
+<tr><td  colspan=2 align=center><font size=+2><b>Instructions:</b></font><br></td></tr>
+<tr>
+<td width=50% align=center valign=top>
+<font size=+1>Mouse</font>
+<hr size=1 width=70%>
+<b>Left button</b> : Pan<br>
+<b>Middle button</b> : Zoom<br>
+<b>Right button</b> : Window<br>
+<b>Mouse wheel</b> : Scroll<br>
+<b>Tool + Left button</b> : Use Tools<br>
+</td>
+<td width=50% align=center valign=top>
+<font size=+1>Touch</font>
+<hr size=1 width=70%>
+<b>One finger:</b> : Scroll & Window<br>
+<table width = 200 height=150 border=1 cellspacing=1 bgcolor=#000><tr>
+<td width=30% align=center>Scroll</td>
+<td width=40% align=center>Window</td>
+<td width=30% align=center>Scroll</td>
+</tr></table>
+<b>Two fingers</b> : Pan & Zoom<br>
+<b>Tool + One finger</b> : Use Tools<br>
+</td>
+</tr>
+<tr>
+<td colspan=2 align=center valign=top>
+<font size=+1>Leap Motion</font>
+<hr size=1 width=70%>
+<b>1-finger circle</b> : Scroll (clockwise: next, anti: back)<br>
+<b>Open palm, face right/left</b> : Window width<br>
+<b>Open palm, face up/down</b> : Window center<br>
+<b>1-finger tap</b> : Next window preset<br>
+</td></tr>
+<!--tr>
+<td width=50% align=center valign=top>
+<font size=+1>Load from File</font>
+<hr size=1 width=70%>
+DICOM files <b>MUST</b> be in Uncompressed format. (Explicit VR Little-Endian)<br><br>
+Drag & drop multiple DICOM files.<br><br>
+ZIP files & Compressed Folder Tool (Windows) <b>NOT</b> supported. Please fully extract files first!<br><br>
+Only <b>1 series</b> per load.<br><br>
+</td>
+<td width=50% align=center valign=top>
+<font size=+1>Load from PACS</font>
+<hr size=1 width=70%>
+DICOM files <b>MUST</b> be in Uncompressed format. (Explicit VR Little-Endian)<br><br>
+Requires <a href=http://orthanc-server.com target="_blank">Orthanc</a> with ServeFolders plugin.<br><br>
+URL: (viewerfile).html?series=(orthancSeriesHash)<br><br>
+Runs better with Isengard Browser.<br>
+</td>
+</tr-->
+
+</table>
+
+<input type="button" value="Close" class="window" onClick="javascript:toggleInfoDiv('helpDiv')"></center>
+</div>
+
+<div id="disclaimerDiv" style="display: none; position: fixed; top: 5%; left: 5%; width: 650; height: 90%; background-color: rgba(20, 40, 50, 0.95); z-index: 150;">
+<p align=right><input type="button" value="X" class="tool" onClick="javascript:toggleInfoDiv('disclaimerDiv')">&nbsp&nbsp</p>
+<center>
+<table width=600 border=0 cellpadding=10>
+<tr><td  colspan=2 align=center><font size=+2><b>Licensing</b></font><br></td></tr>
+<tr><td colspan=2 align=center><pre>
+ Copyright (c) 2016 mcdcm project. All rights reserved.
+
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions are met:
+
+ 1. Redistributions of source code must retain the above copyright notice,
+ this list of conditions and the following disclaimer.
+
+ 2. Redistributions in binary form must reproduce the above copyright
+ notice, this list of conditions and the following disclaimer in
+ the documentation and/or other materials provided with the distribution.
+
+ 3. The names of the authors may not be used to endorse or promote products
+ derived from this software without specific prior written permission.
+
+ THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESSED OR IMPLIED WARRANTIES,
+ INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
+ ANY CONTRIBUTORS TO THIS SOFTWARE BE LIABLE FOR ANY DIRECT, INDIRECT,
+ INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+ OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+</pre>
+</td></tr>
+
+<tr><td  colspan=2 align=center>
+<hr size=1>
+<b>Logos for Carestream, GE, Kodak, Philips and Siemens belong to them.</b><br>Used without permission.</font>
+<hr size=-1>
+<font size=-1>
+mcdcmViewer uses:
+<a href=https://github.com/rii-mango/JPEGLosslessDecoderJS target="_blank">JPEGLosslessDecoderJS</a> | 
+<a href=https://gildas-lormeau.github.io/zip.js/ target="_blank">zip.js</a> |
+<a href=https://developer.leapmotion.com/javascript target="_blank">leap.js</a> |
+<a href=https://github.com/kripken/j2k.js target="_blank">openjpeg</a></td></tr>
+</table>
+
+<input type="button" value="Close" class="window" onClick="javascript:toggleInfoDiv('disclaimerDiv')"></center>
+</div>
+
+
+<script>
+if (reverseProxiedOrthanc) {
+	//if running through reverse proxy, define the orthanc address at the top of the file
+	} else {
+	//if running through ServeFolders plugin for Orthanc, this will get the Orthanc server & port.
+	var orthanc = "http://" + extractDomain(window.location.href);
+	}
+	
+//Function (Addon): Get the HTTP-GET variables
+function getUrlVars() {
+	//http://papermashup.com/read-url-get-variables-withjavascript/
+	var vars = {};
+    var parts = window.location.href.replace(/[?&]+([^=&]+)=([^&]*)/gi, function(m,key,value) {
+        vars[key] = value;
+		});
+    return vars;
+	}
+
+//Function (Addon): Get the root domain & port
+function extractDomain(url) {
+	//http://stackoverflow.com/questions/8498592/extract-root-domain-name-from-string
+    var domain;
+    //find & remove protocol (http, ftp, etc.) and get domain
+    if (url.indexOf("://") > -1) {
+        domain = url.split('/')[2];
+		}
+		else {
+        domain = url.split('/')[0];
+		}
+    return domain;
+	}
+
+//Global variables (O__o)'
+var dcmFiles = document.getElementById('dcmFiles');
+// var pixelData = [];
+var TE = {}; //[];
+var sliceLocation = [];
+var manufacturerUrl;
+var lastFoundTagLocation;
+var fileDisplayArea = document.getElementById('fileDisplayArea');
+var fileProgressArea = document.getElementById('fileProgressArea');
+var fileProgressBar = document.getElementById('fileProgressBar');
+var firstInstanceNumber = 1000;
+var totalSlices;
+var t = 0;
+var pixelDataStart;
+var canvas = document.getElementById('myCanvas');
+var ctx = canvas.getContext('2d');
+var canvasData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+var canvasDataBeforeGraphics = ctx.getImageData(0, 0, canvas.width, canvas.height);
+var img = new Image(); // for use with scaling
+var pixels = []; // global for use in pixelLens
+var ROI = []; //contains highlighted pixels[]
+var defaultWindowCenter = 0;
+var defaultWindowWidth = 1024;
+var windowCenter = 0;
+var windowWidth = 1024;
+var initialWindowCenter = 0;
+var initialWindowWidth = 1024;
+var currentSlice = 1;
+//var height;
+//var width;
+var row = {}; //var row;
+var col = {}; //var col;
+var rowDistance = {}; // var rowDistance = 0.74;
+var colDistance = {}; // var colDistance = 0.74;
+var HUcorrection = {}; 0; //rescaleIntercept
+var rescaleSlope = {};
+var pixelRepresentation;
+var bitsAllocated = 16;
+var RGB = 0;
+var numberOfFrames;
+var patientName; //for use in download canvas
+var patientMRN; //to pass to IC.html
+var studyDate; //to pass to IC.html
+var institutionName; //updates on drawSlice
+var studyDescription; // for use in download canvas
+var seriesDescription = {};
+var modality;
+var baseX = 0;
+var baseY = 0;
+var initialBaseX = 0;
+var initialBaseY = 0;
+var initialBaseX2 = 0; // for pinch-zoom
+var initialBaseY2 = 0; // for pinch-zoom
+var initialZoom = 1;
+var panX = 0;
+var panY = 0;
+var zoom = 1;
+var invert = 1; //default is positive
+var downScale = 1;
+var pixelArray = {}; //var pixelArray = [];
+var previousS; // if s doesnt change, no need to modify canvasdata
+var angleOne = 0;
+var angleOneRead = 0;
+var angleCurrent = 0;
+var polygonPointX = [];
+var polygonPointY = [];
+var x1P1 = "";
+var y1P1 = "";
+var x1P2 = "";
+var y1P2 = "";
+var multitouch = false; // catch 2nd finger touchdown
+var multipleSeriesAlert = false; // for multiple series alert
+var multiSeries = [];
+var multiSeriesDescription = [];
+var currentSeries;
+var firstSliceDrawn = false; // ensure 1st draw during load only occurs once
+var firstSeriesInstanceUID = "";
+var transferSyntaxDescription;
+
+//load from Web File
+if (getUrlVars()["file"]) {
+	if (getUrlVars()["file"].indexOf('.zip') != -1) { //zip file
+		var XHR = new XMLHttpRequest();
+		XHR.open("GET", getUrlVars()["file"], true);
+		XHR.responseType = "blob";
+		XHR.onprogress = function(e) {
+//			alert('onprogress');
+			var percentComplete = Math.round((e.loaded / e.total)*100); 
+//			document.getElementById('header').innerHTML += percentComplete + " ";
+			};
+		XHR.onload = function (e) {
+			fileProgressArea.innerHTML = "Loading...<br><br><font size=-1>This may take up to a few minutes for large / multiple DICOM files...</font>";
+			unzip(e.target.response);
+			};
+		fileProgressArea.innerHTML = "Downloading...<br><br><font size=-1>This may take up to a few minutes for larger zip files...</font>";
+		XHR.send(null);
+		} else { //txt file
+		var XHR = new XMLHttpRequest();
+		XHR.open("GET", getUrlVars()["file"], true);
+		XHR.responseType = "text";
+		XHR.onload = function (e) {
+			fileProgressArea.innerHTML = "Loading...<br><br><font size=-1>This may take up to a few minutes for large / multiple DICOM files...</font>";
+			var resp = JSON.parse(this.response);
+			retrieveInstances(JSON.parse(this.response));
+			};
+		XHR.send(null);
+		}
+	}
+	
+//load from Orthanc (series)
+if (getUrlVars()["series"]) {
+	var XHR = new XMLHttpRequest();
+	XHR.open("GET", orthanc + "/series/" + getUrlVars()["series"], true); //change this if using reverse proxy (e.g. var orthanc = 'http://localhost/orthanc';)
+	XHR.responseType = "text";
+	XHR.onload = function (e) {
+		fileProgressArea.innerHTML = "Loading...<br><br><font size=-1>This may take up to a few minutes for large / multiple DICOM files...</font>";
+		retrieveInstances(JSON.parse(this.response));
+		};
+	XHR.send(null);
+	}
+
+//load from Orthanc (study)
+if (getUrlVars()["study"]) {
+	var XHR = new XMLHttpRequest();
+	XHR.open("GET", orthanc + "/studies/" + getUrlVars()["study"] + "/instances", true); //change this if using reverse proxy (e.g. var orthanc = 'http://localhost/orthanc';)
+	XHR.responseType = "text";
+	XHR.onload = function (e) {
+		fileProgressArea.innerHTML = "Loading...<br><br><font size=-1>This may take up to a few minutes for large / multiple DICOM files...</font>";
+		var studyResponse = JSON.parse(this.response);
+		var instanceJSON = "{\n\"Instances\" : [\n";
+		for (var i = 0; i < studyResponse.length; i++) {
+			instanceJSON += "\"" + studyResponse[i].ID + "\"";
+			if (i != studyResponse.length - 1) { instanceJSON += ","; }
+//			instanceJSON += "\n";
+			}
+		instanceJSON += "]\n}";
+		var series = JSON.parse(instanceJSON);
+//		alert(series.Instances.length);
+		retrieveInstances(JSON.parse(instanceJSON));
+		};
+	XHR.send(null);
+	}
+	
+//retrieve from Orthanc or Web
+function retrieveInstances(series) {
+	totalSlices = series.Instances.length;
+	var XHRi = new Array();
+	for (var i = 0; i < series.Instances.length; i++) {
+
+		XHRi[i] = new XMLHttpRequest();
+		if (getUrlVars()["file"] && getUrlVars()["file"].indexOf('.zip') != -1) {
+			XHRi[i].open("GET", series.Instances[i], true);
+			} else
+		if (getUrlVars()["file"] && getUrlVars()["file"].indexOf('.txt') != -1) {
+			XHRi[i].open("GET", "samples/" + series.Instances[i], true);
+			} else
+		if (filearrUrl.length > 0) {
+			XHRi[i].open("GET", series.Instances[i], true);
+			} else {
+			XHRi[i].open("GET", orthanc + "/instances/" + series.Instances[i] + "/file", true);
+			}
+		XHRi[i].responseType = "blob";
+		XHRi[i].onload = function (e) {
+			var reader = new FileReader();  
+			reader.onload = function(e) {  
+				readDicomFile(e);
+				}
+			reader.readAsDataURL(this.response);
+			};
+		XHRi[i].i = i;
+		XHRi[i].send(null);
+		}
+	}
+
+//Function (Basic): a-to-b conversion
+var tableStr = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+var table = tableStr.split("");
+if (!window.atob) {
+	window.atob = function (base64) {
+		if (/(=[^=]+|={3,})$/.test(base64)) throw new Error("String contains an invalid character");
+		base64 = base64.replace(/=/g, "");
+		var n = base64.length & 3;
+		if (n === 1) throw new Error("String contains an invalid character");
+		for (var i = 0, j = 0, len = base64.length / 4, bin = []; i < len; ++i) {
+			var a = tableStr.indexOf(base64[j++] || "A"), b = tableStr.indexOf(base64[j++] || "A");
+			var c = tableStr.indexOf(base64[j++] || "A"), d = tableStr.indexOf(base64[j++] || "A");
+			if ((a | b | c | d) < 0) throw new Error("String contains an invalid character");
+			bin[bin.length] = ((a << 2) | (b >> 4)) & 255;
+			bin[bin.length] = ((b << 4) | (c >> 2)) & 255;
+			bin[bin.length] = ((c << 6) | d) & 255;
+			};
+		return String.fromCharCode.apply(null, bin).substr(0, bin.length + n - 4);
+		};
+	}
+
+var loadBase64ToHexTime = 0;
+//Function (Basic): Convert base64 to hex
+function base64ToHex(str) {
+	//performance
+	var d = new Date();
+	var startBase64Time = d.getTime();
+
+	var hexString = "";
+	var bin = atob(str.replace(/[ \r\n]+$/, ""));
+	for (var i = 0; i < bin.length; ++i) {
+//	for (var i = 0, bin = atob(str.replace(/[ \r\n]+$/, "")), hex = []; i < bin.length; ++i) {
+		var tmp = bin.charCodeAt(i).toString(16);
+		if (tmp.length === 1) { tmp = "0" + tmp; }
+//		hex[hex.length] = tmp;
+		hexString += tmp; //about 5% improvement than array --> join on Chrome 46
+	}
+	//performance
+	var d = new Date();
+	var endBase64Time = d.getTime();
+	loadBase64ToHexTime += (endBase64Time - startBase64Time);
+	
+//	return hex.join("");
+	return hexString;
+}
+
+//Function (Basic): Convert hex to string
+function hextostring(d) {
+	return ('' + d).replace(/.(.)/g, '$1')
+}
+
+//Function (Basic): Convert hex to ???
+function hex2a(hexx) {
+	var hex = hexx.toString();//force conversion
+	var str = '';
+	for (var i = 0; i < hex.length; i += 2) {
+		str += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
+	}
+	return str;
+}
+
+//Function (Basic): Retrieve DICOM Tags from base64. Define manualStart to skip to next DCM tags if multiple.
+function getDcmTag(content, tag, manualStart) {
+	manualStart = manualStart || 0;
+	var start = content.indexOf(tag, manualStart);
+	while (start/2 != parseInt(start/2) && start != -1) {
+		start = content.indexOf(tag,start+1);
+		}
+//	if (start > content.lastIndexOf('e07f1000')) { return; } //only look for tags before 7fe0-0010
+	lastFoundTagLocation = start;
+	var length = parseInt("" + content.substr(start+14, 2) + content.substr(start+12, 2), 16); 
+	var VR = hex2a(content.substr(start+8, 4));
+
+	//based on VR, interpret the value. At the moment, very minimal support!!!
+	if (VR == "US") {
+		var value = parseInt("" + content.substr(start+18,2) + content.substr(start+16,2), 16);
+		} else if (VR == "FD") {
+		var buffer = new ArrayBuffer(8);
+		var bytes = new Uint8Array(buffer);
+		var doubles = new Float64Array(buffer);
+		bytes[7] = "0x" + content.substr(start+30,2);
+		bytes[6] = "0x" + content.substr(start+28,2);
+		bytes[5] = "0x" + content.substr(start+26,2);
+		bytes[4] = "0x" + content.substr(start+24,2);
+		bytes[3] = "0x" + content.substr(start+22,2);
+		bytes[2] = "0x" + content.substr(start+20,2);
+		bytes[1] = "0x" + content.substr(start+18,2);
+		bytes[0] = "0x" + content.substr(start+16,2);
+		var value = doubles[0];
+		} else if (VR == "DS" || VR == "PN" || VR =="LO" || VR == "CS" || VR == "LT" || VR == "DA" || VR == "UI" || VR == "IS") {
+		var value = hex2a(content.substr(start+16, length*2)); //length is in 2bytes
+		} else { // scrambled DICOM, no VR!
+//		alert(VR);
+//		var value = hex2a(content.substr(start+16, length*2)); //length is in 2bytes
+		var value = "";
+		//have to detect VR type!!!
+		}
+	return value;
+}
+
+var loadPixelDataTime = 0;
+//Function (Basic): Decode DICOM pixelData into base10 array 
+function hexLEtoDec(pixelData,bitsAllocated,seriesInstanceUID) {
+	//performance
+	var d = new Date();
+	var startPixelDataTime = d.getTime();
+		var result = new Array(col[seriesInstanceUID]*row[seriesInstanceUID]*numberOfFrames);
+	var curCol = 0;
+	var curRow = 0;
+	var p = 0;
+//	bitsAllocated = bitsAllocated || 16;
+	if (bitsAllocated == 8) {
+		for (var i = 0; i < pixelData.length; i += 2) {	
+			var pixel = parseInt(pixelData.substr(i, 2), 16);		
+			if ((curCol * downScale) == parseInt(curCol * downScale) && (curRow * downScale) == parseInt(curRow * downScale)) {
+				result[p] = pixel;
+				p++;	
+				}
+			curCol++;
+			if (curCol == col[seriesInstanceUID]/downScale) {
+				curRow++;
+				curCol = 0;
+				}
+			}
+		} else {
+		for (var i = 0; i < pixelData.length; i += 4) {
+			var pixel = parseInt(pixelData.substr(i+2, 2) + pixelData.substr(i, 2), 16);
+			if (pixelRepresentation == 1) {
+				if (pixel > 32768) { pixel = pixel - 65536; } //signed
+				}
+			if ((curCol * downScale) == parseInt(curCol * downScale) && (curRow * downScale) == parseInt(curRow * downScale)) {
+				result[p] = pixel;
+				p++;	
+				}
+			curCol++;
+			if (curCol == col[seriesInstanceUID]/downScale) {
+				curRow++;
+				curCol = 0;
+				}
+			}
+		}
+	//performance
+	var d = new Date();
+	var endPixelDataTime = d.getTime();
+	loadPixelDataTime += endPixelDataTime - startPixelDataTime;
+//	alert(col + "|" + row + "\n" + (col*row*numberOfFrames) + "\n" + result.length);
+	return result;
+	}
+
+//Function (Basic): Convert pixelData into ArrayBuffer for use in lossless.js 
+function toArrayBuffer(pixelData) {
+    ab = new ArrayBuffer(pixelData.length / 2);
+    view = new Uint8Array(ab);
+	for (var i = 0; i < pixelData.length; i += 2) {	
+		view[i/2] = '0xff' + pixelData.substr(i, 2);	
+//		if (i < 10 || i > pixelData.length - 10) { console.log(pixelData.substr(i,2)); }
+		}
+    return ab;
+	}
+
+//Function (Basic): Decode result from lossless.js into base10 array 
+function arrayBuffertoDec(decodedJpegArrayBuffer, seriesInstanceUID) {
+	var uint8View = new Uint8Array(decodedJpegArrayBuffer);
+	var result = new Array(col[seriesInstanceUID]*row[seriesInstanceUID]*numberOfFrames);
+	var p = 0;
+	for (var i = 0; i < decodedJpegArrayBuffer.byteLength; i += 2) {	
+		if (uint8View[i+1].toString(16).length == 1) { var firstChar = "0" + uint8View[i+1].toString(16); } else { var firstChar = uint8View[i+1].toString(16) }
+		if (uint8View[i].toString(16).length == 1) { var secondChar = "0" + uint8View[i].toString(16); } else { var secondChar = uint8View[i].toString(16) }
+
+		result[p] = parseInt(firstChar + secondChar, 16);
+
+//		if (i < 10 || i > decodedJpegArrayBuffer.byteLength - 20) { console.log(result[p]); }
+		p++;
+//		console.log(uint8View[1].toString(16));
+		}
+	return(result);
+	}
+
+function toArrayBufferJ2K(pixelData) {
+	var j2kheader = ['00','00', '00', '0C', '6A', '50', '20', '20', '0D', '0A', '87', '0A', '00', '00', '00', '14', '66', '74', '79', '70', '6A', '70', '32', '20', '00', '00', '00', '00', '6A', '70', '32', '20', '00', '00', '01', '59', '6A', '70', '32', '68', '00', '00', '00', '16', '69', '68', '64', '72', '00', '00', '01', '2C', '00', '00', '01', '90', '00', '03', '07', '07', '01', '00', '00', '00', '01', '21', '63', '6F', '6C', '72', '02', '00', '00', '00', '00', '01', '16', '00', '00', '00', '00', '02', '20', '00', '00', '73', '63', '6E', '72', '52', '47', '42', '20', '58', '59', '5A', '20', '07', 'D1', '00', '01', '00', '01', '00', '00', '00', '00', '00', '00', '61', '63', '73', '70', '00', '00', '00', '00', '00', 'C0', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '80', '00', '00', '00', '00', '00', '00', '00', '00', '01', '00', '00', '00', '00', 'F6', 'D6', '00', '01', '00', '00', '00', '00', 'D3', '2D', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '06', '72', '54', '52', '43', '00', '00', '00', 'CC', '00', '00', '00', '0E', '67', '54', '52', '43', '00', '00', '00', 'CC', '00', '00', '00', '0E', '62', '54', '52', '43', '00', '00', '00', 'CC', '00', '00', '00', '0E', '72', '58', '59', '5A', '00', '00', '00', 'DA', '00', '00', '00', '14', '67', '58', '59', '5A', '00', '00', '00', 'EE', '00', '00', '00', '14', '62', '58', '59', '5A', '00', '00', '01', '02', '00', '00', '00', '14', '63', '75', '72', '76', '00', '00', '00', '00', '00', '00', '00', '01', '01', 'CD', '58', '59', '5A', '20', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '58', '59', '5A', '20', '00', '00', '00', '00', '80', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '58', '59', '5A', '20', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '00', '1A', '72', '65', '73', '20', '00', '00', '00', '12', '72', '65', '73', '63', '24', '49', '80', '00', '24', '49', '80', '00', '04', '04', '00', '00', '00', '00', '6A', '70', '32', '63'];
+console.log(pixelData.length);
+console.log('j2kheaderlength = ' + j2kheader.length);
+
+    ab = new ArrayBuffer(j2kheader.length + (pixelData.length / 2));
+    view = new Uint8Array(ab);
+    for (var i = 0; i < j2kheader.length; i++) {
+    	view[i] = "0xFF" + j2kheader[i];
+//		if (i < 5 || i > j2kheader.length - 10) { console.log('j2k: ' + j2kheader[i]); }
+    	}
+//    console.log(i);
+	for (var i = 0; i < pixelData.length / 2; i ++) {	
+		view[j2kheader.length + i] = '0xFF' + pixelData.substr(i * 2, 2);	
+//		if (i < 10 || i > (pixelData.length/2) - 10) { console.log('pix: ' + pixelData.substr(i * 2,2)); }
+		}
+//	console.log(ab.byteLength);
+    return ab;
+
+	}
+
+
+//Function (Basic): Decode result from openjpeg.js into base10 array 
+function arrayBuffertoDecJ2K(rgbImage, seriesInstanceUID) {
+//	var uint8View = new Uint8Array(decodedJpegArrayBuffer);
+	var result = new Array(col[seriesInstanceUID]*row[seriesInstanceUID]*numberOfFrames);
+	var p = 0;
+//console.log(rgbImage.data.length);
+	for (var i = 0; i < rgbImage.data.length; i += 2) {	
+//		if (uint8View[i+1].toString(16).length == 1) { var firstChar = "0" + uint8View[i+1].toString(16); } else { var firstChar = uint8View[i+1].toString(16) }
+//		if (uint8View[i].toString(16).length == 1) { var secondChar = "0" + uint8View[i].toString(16); } else { var secondChar = uint8View[i].toString(16) }
+
+		result[p] = (rgbImage.data[i] * 256) + rgbImage.data[i+1];
+
+//		if (i < 10 || i > rgbImage.data.length - 20) { console.log(result[p]); }
+		p++;
+//		console.log(uint8View[1].toString(16));
+		}
+//console.log(result[0]);
+	return(result);
+
+	}
+
+
+//adds eventlistener for file drag-drop
+dcmFiles.addEventListener('change', function(e) {
+	fileProgressArea.innerHTML = "Loading...<br><br><font size=-1>This may take up to a few minutes for large / multiple DICOM files...</font>";
+	totalSlices = dcmFiles.files.length;
+	for (var i = 0; i < dcmFiles.files.length; i++) { readFiles(dcmFiles.files[i]); }
+	});
+
+//Function (Basic): Link between local file reading and readDicomFile
+function readFiles(file) {
+	var name = file.name;
+	var reader = new FileReader();  
+	reader.onload = function(e) {  
+		readDicomFile(e);
+		}
+	reader.readAsDataURL(file);
+	}
+
+var loadFileTime = 0;
+//Function (Basic): Read DICOM file in base64, get DICOM metadata, fill in pixelArray	
+function readDicomFile(e) {
+	//performance
+	var d = new Date();
+	var startReadFileTime = d.getTime();
+
+	//get file content  
+	//support different file content headers, esp OS X
+	var lastPos = e.target.result.indexOf('base64,') + 7; 
+	var content = base64ToHex(e.target.result.substring(lastPos, e.target.result.length));				 	
+	pixelDataStart = content.lastIndexOf('e07f1000');
+	if (pixelDataStart === -1) { return; } //fix for Philips Ingenia which generates a non-image file at instance 1 in addition to another image at instance 1
+
+	//get transfer syntax
+	var transferSyntax = getDcmTag(content, '02001000');
+
+	//load multiple seriesInstanceUIDs into multiSeries[] array
+	var seriesInstanceUID = getDcmTag(content, '20000e00').replace(/[^\w\s\.]/gi, '');
+	if (!firstSeriesInstanceUID) {
+		currentSeries = seriesInstanceUID;
+		firstSeriesInstanceUID = seriesInstanceUID;
+		}
+	var seriesAlreadyExists = false;
+	//load first loaded series
+//	if (!currentSeries) { currentSeries = firstSeriesInstanceUID; }
+
+	for (var r = 0; r < multiSeries.length; r++) {
+		if (multiSeries[r] == seriesInstanceUID) { seriesAlreadyExists = true; }
+		}
+	if (seriesAlreadyExists == false) {
+		multiSeries.push(seriesInstanceUID);
+		multiSeriesDescription.push(getDcmTag(content, '08003e10') || 'No Description');
+		TE[seriesInstanceUID] = [];
+		//		}
+	
+	//get DICOM data from 1st slice
+//	if (t == 0) {
+		//performance
+		var d = new Date();
+		var startFirstFileTime = d.getTime();
+
+		if (transferSyntax.indexOf("1.2.840.10008.1.2.1") === 0) { transferSyntax = "1.2.840.10008.1.2.1"; }
+
+		if (transferSyntax != "1.2.840.10008.1.2.4.70" && transferSyntax != "1.2.840.10008.1.2.4.57" && transferSyntax != "1.2.840.10008.1.2.1" && transferSyntax != "1.2.840.10008.1.2.4.91") {
+			alert('Unsupported Transfer Syntax');
+			}
+		if (transferSyntax == "1.2.840.10008.1.2.4.70" || transferSyntax == "1.2.840.10008.1.2.4.57") { transferSyntaxDescription = "JPEG"; } else
+		if (transferSyntax == "1.2.840.10008.1.2.4.91") { transferSyntaxDescription = "JPEG 2000"; } else
+		if (transferSyntax == "1.2.840.10008.1.2.1") { transferSyntaxDescription = "Uncompressed"; } else { transferSyntaxDescription = "Unknown"; }
+
+		patientName = getDcmTag(content, '10001000');
+		patientMRN = getDcmTag(content, '10002000');
+		modality = getDcmTag(content, '08006000');
+		var patientBirthDate = getDcmTag(content, '10003000');
+		var patientSex = getDcmTag(content, '10004000');
+		institutionName = getDcmTag(content, '08008000');
+		pixelRepresentation = parseInt(getDcmTag(content, '28000301'));
+		HUcorrection[seriesInstanceUID] = parseInt(getDcmTag(content, '28005210')) || 0;
+		rescaleSlope[seriesInstanceUID] = getDcmTag(content, '28005310') || 1;
+		var windowCenterTag = getDcmTag(content, '28005010').split('\\');
+		windowCenter = parseInt(windowCenterTag[0]);
+		defaultWindowCenter = windowCenter;
+		initialWindowCenter = windowCenter;
+		var windowWidthTag = getDcmTag(content, '28005110').split('\\');
+		windowWidth = parseInt(windowWidthTag[0]);
+		defaultWindowWidth = windowWidth;
+		initialWindowWidth = windowWidth;
+		bitsAllocated = getDcmTag(content, '28000001');
+		var photometricInterpretation = getDcmTag(content, '28000400');
+		if (photometricInterpretation == "MONOCHROME1 ") { invert = -1; }
+		if (photometricInterpretation.indexOf('RGB') != -1) { RGB = 1; }
+		studyDescription = getDcmTag(content, '08003010');
+		seriesDescription[seriesInstanceUID] = getDcmTag(content, '08003e10');
+		if (seriesDescription[seriesInstanceUID] == "") { seriesDescription[seriesInstanceUID] = 'No Description'; }
+		studyDate = getDcmTag(content, '08002000');
+		col[seriesInstanceUID] = getDcmTag(content, '28001100');
+		row[seriesInstanceUID] = getDcmTag(content, '28001000');
+		var pixelspaces = getDcmTag(content, '28003000').split('\\');
+		rowDistance[seriesInstanceUID] = parseFloat(pixelspaces[0]);
+		colDistance[seriesInstanceUID] = parseFloat(pixelspaces[1]);
+		numberOfFrames = getDcmTag(content, '28000800') || 1;
+		bodyPart = getDcmTag(content, '18001500');
+		manufacturer = getDcmTag(content, '08007000');
+		if (manufacturer.toLowerCase().indexOf('siemens') === 0) { manufacturerUrl = urlSiemens; }
+		if (manufacturer.toLowerCase().indexOf('philips') === 0) { manufacturerUrl = urlPhilips; }
+		if (manufacturer.toLowerCase().indexOf('toshiba') === 0) { manufacturerUrl = urlToshiba; }
+		if (manufacturer.toLowerCase().indexOf('kodak') === 0) { manufacturerUrl = urlKodak; }
+		if (manufacturer.toLowerCase().indexOf('carestream') === 0) { manufacturerUrl = urlCarestream; }
+		if (manufacturer.toLowerCase().indexOf('ge') === 0) { manufacturerUrl = urlGE; }
+		manufacturerModel = getDcmTag(content, '08009010');
+		var patientAge = parseInt(studyDate.substr(0,4)) - parseInt(patientBirthDate.substr(0,4));
+	
+		document.getElementById('dcmInfo').innerHTML = "<b>";
+		document.getElementById('dcmInfo').innerHTML += patientName + "<br>" + patientMRN + "</b><br>" + patientAge + "y/" + patientSex + "<br>Date: " + studyDate;	
+		if (currentSeries == seriesInstanceUID) {
+			document.getElementById('dcmInfo2').innerHTML = institutionName + "<br>" + studyDescription + "<br>" + seriesDescription[seriesInstanceUID];
+			}
+		
+		//downScaling if massively large files (e.g. MG)
+		if (row[seriesInstanceUID] > 4096) {
+			row[seriesInstanceUID] = row[seriesInstanceUID]/2;
+			col[seriesInstanceUID] = col[seriesInstanceUID]/2;
+			downScale = downScale/2;
+			}
+			
+		//downScaling for large files if using mobile / tablet
+		if (mobileAndTabletcheck()) {
+			if (row[seriesInstanceUID] > 2048) { //http://localhost:8042/mcdcm/iron.jpg
+				row[seriesInstanceUID]= row[seriesInstanceUID]/2;
+				col[seriesInstanceUID] = col[seriesInstanceUID]/2;
+				downScale = downScale/2;
+				}
+			if (row[seriesInstanceUID] > 1024) {
+				row[seriesInstanceUID] = row[seriesInstanceUID]/2;
+				col[seriesInstanceUID] = col[seriesInstanceUID]/2;
+				downScale = downScale/2;
+				}
+			if (row[seriesInstanceUID] > 512) {
+				row[seriesInstanceUID] = row[seriesInstanceUID]/2;
+				col[seriesInstanceUID] = col[seriesInstanceUID]/2;
+				downScale = downScale/2;
+				}
+				document.getElementById('deviceInfo').innerHTML = "Mobile device detected. Quality: " + Math.round((downScale) * 100) + "%";
+			}
+
+		if (currentSeries == seriesInstanceUID) {
+			canvas.height = row[seriesInstanceUID];
+			canvas.width = col[seriesInstanceUID];
+			}
+			
+		//performance
+		var d = new Date();
+		var endFirstFileTime = d.getTime();
+		readFirstFileTime = Math.round(endFirstFileTime - startFirstFileTime);
+		}
+
+	//instance
+	var patientNameTagLocation = content.indexOf('10001000'); //search after patient name to get instanceNumber after the 0008 group. 
+	var instanceNumber = getDcmTag(content, '20001300', patientNameTagLocation);
+	instanceNumber = parseInt(instanceNumber.replace(" ", ""));
+	if (instanceNumber < firstInstanceNumber) { firstInstanceNumber = instanceNumber; }
+
+
+	//slice
+	sliceLocation[instanceNumber] = getDcmTag(content, '20004110');
+
+	//TE 
+	TE[seriesInstanceUID][instanceNumber] = getDcmTag(content, '18008100').replace(" ", "");
+//	TE[seriesInstanceUID][instanceNumber] = TE[seriesInstanceUID][instanceNumber].replace(" ", "");
+
+	//pixelData
+//	pixelDataStart = content.lastIndexOf('e07f1000'); // already declared above
+	var VR = hex2a(content.substr(pixelDataStart+8, 4));
+	if (VR != "OW") { pixelDataStart -= 8; }
+	var pixelDataLengthLE = content.substr(pixelDataStart+16, 8);
+	var pixelDataLengthHex = "" + pixelDataLengthLE.substr(6,2) + pixelDataLengthLE.substr(4,2) + pixelDataLengthLE.substr(2,2) + pixelDataLengthLE.substr(0,2);
+	var pixelDataLength = parseInt(pixelDataLengthHex, 16);
+//	var pixelDataRaw = content.substr(pixelDataStart+24, pixelDataLength*2);
+
+	// declare new array
+	if (!pixelArray[seriesInstanceUID]) { pixelArray[seriesInstanceUID] = []; }
+
+	// check transfer syntax
+	if (transferSyntax == "1.2.840.10008.1.2.4.70" || transferSyntax == "1.2.840.10008.1.2.4.57") {
+		// loadPixelArray using JPEG
+		var pixelJpegStart = content.indexOf('ffd8ff', pixelDataStart);
+		var pixelDataRaw = content.substr(pixelJpegStart, content.length - pixelJpegStart - 16);
+//		var pixelDataRaw = content.substr(pixelDataStart+24+48, content.length - (pixelDataStart + 72) - 16);
+		pixelDataRawBuffer = toArrayBuffer(pixelDataRaw);
+//		console.log(pixelDataRawBuffer.byteLength);
+		var decoder = new jpeg.lossless.Decoder();
+		var output = decoder.decompress(pixelDataRawBuffer);
+		pixelArray[seriesInstanceUID][instanceNumber] = arrayBuffertoDec(output, seriesInstanceUID);
+		} else 
+
+	if (transferSyntax == "1.2.840.10008.1.2.4.91") {
+		// loadPixelArray using J2K
+		var pixelJpegStart = content.indexOf('ff4fff', pixelDataStart);
+		var pixelJpegEnd = content.lastIndexOf('ffd9');
+//		console.log(pixelJpegStart);
+//		console.log(pixelJpegEnd);
+		var pixelDataRaw = content.substr(pixelJpegStart, pixelJpegEnd - pixelJpegStart + 4);
+		pixelDataRawBuffer = new Uint8Array(toArrayBufferJ2K(pixelDataRaw));
+		var output = openjpeg(pixelDataRawBuffer, 'jp2');
+//		console.log(rgbImage.width);
+		pixelArray[seriesInstanceUID][instanceNumber] = arrayBuffertoDecJ2K(output, seriesInstanceUID);
+		} else {
+		// load pixelArray using Explicit VR
+		var pixelDataRaw = content.substr(pixelDataStart+24, pixelDataLength*2);
+		pixelArray[seriesInstanceUID][instanceNumber] = hexLEtoDec(pixelDataRaw,bitsAllocated,seriesInstanceUID);
+		}
+
+	if (numberOfFrames > 1) {
+		//treat each frame as an instance
+		var allFramesPixelData = pixelArray[seriesInstanceUID][instanceNumber]; //assume 1 multi-frame file only
+		var frameSize = row[seriesInstanceUID] * col[seriesInstanceUID];
+		for (var i = 1; i <= numberOfFrames; i++) {
+			pixelArray[seriesInstanceUID][i] = allFramesPixelData.slice((i-1) * frameSize, ((i-1) * frameSize) + frameSize);
+			}
+		//get the TEs, separated for now, can push back into the previous FOR loop for PROD
+		lastFoundTagLocation = content.indexOf('00523092'); //set initial start point at perFrameFunctionalGroupSequence 
+		for (var i = 1; i <= numberOfFrames; i++) {
+			TE[seriesInstanceUID][i] = getDcmTag(content, '18008290', lastFoundTagLocation+1);
+			}
+		}
+
+	t++;
+
+	fileProgressBar.innerHTML = t + " / " + totalSlices;
+
+	//performance
+	var d = new Date();
+	var endReadFileTime = d.getTime();
+	loadFileTime += (endReadFileTime - startReadFileTime);
+	
+	//check for load complete
+//	if (t == totalSlices || (instanceNumber == 1 && seriesInstanceUID == firstSeriesInstanceUID)) { 
+//	if (instanceNumber == 1 && seriesInstanceUID == firstSeriesInstanceUID && firstSliceDrawn == false) { 
+	if (firstSliceDrawn == false) { 
+		firstSliceDrawn = true;
+//		currentSeries = firstSeriesInstanceUID;
+		fileProgressBar.innerHTML = t + " / " + totalSlices;
+		
+		//inform complete and draw 1st slice
+		document.getElementById('viewPort').style.display = "block";
+		document.getElementById('toolbox').style.display = "block";
+		document.getElementById('patientInfo').style.display = "block";
+		document.getElementById('techInfo').style.display = "block";
+		document.getElementById('sideInfo').style.display = "block";
+		document.getElementById('fileLoaderLanding').style.display = "none";
+		document.getElementById('divScrollBar').style.display = "block";
+		
+		fileProgressArea.innerHTML = "Loading Complete"; 
+		ctx = canvas.getContext('2d');
+		canvasData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+		canvasDataBeforeGraphics = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+		// set the maximum value of scrollBar
+		if (numberOfFrames > 1) { document.getElementById('scrollBar').max = parseInt(numberOfFrames); } else { document.getElementById('scrollBar').max = parseInt(pixelArray[currentSeries].length - 1); }
+
+		//position the patientInfo and toolbox
+		resizeElements();
+
+		//draw the first instance (currentSlice = 1 by default or smallest instance on loaded files)
+		currentSlice = +firstInstanceNumber;
+		drawSlice(currentSlice,0,0,0,0,0,0,0,1);
+		// enable T2* button
+		if (TE[seriesInstanceUID]) { //checks entire array, not just 1st instance :P
+			document.getElementById('iconT2Star').disabled = false;
+			}
+		// hide MenuCTWindows if not CT modality
+		if (modality != "CT") {
+			document.getElementById('MenuCTWindows').innerHTML = "";
+			}
+		// hide MenuT2Star if not MR modality
+		if (modality != "MR") {
+			document.getElementById('MenuT2Star').innerHTML = "";
+			}			
+		}
+	if (t == totalSlices) {
+		var d = new Date();
+		endFileTime = d.getTime();
+		//alert(endFileTime - startFileTime);
+		fileProgressBar.innerHTML = t + " / " + totalSlices + " | Total:" + (endFileTime - startFileTime) + "ms | LoadFiles:" + (endFileTime - startFileTime - loadFileTime) + "ms | ReadFileTime:" + Math.round(loadFileTime / totalSlices) + "ms/file | Base64Time: " + Math.round(loadBase64ToHexTime / totalSlices) + "ms/file | HexLEtoDec:" + Math.round(loadPixelDataTime / totalSlices) + "ms/slice | FirstFileTime:" + readFirstFileTime + "ms";
+		}
+
+	//list available series
+	var multiSeriesDescriptionShort = [];
+	document.getElementById('seriesList').innerHTML = "Series:<br>";
+	for (var ms = 0; ms < multiSeries.length; ms++) {
+		if (multiSeriesDescription[ms].length > 16) {
+			multiSeriesDescriptionShort[ms] = multiSeriesDescription[ms].substring(0,12) + "...";
+			} else {
+			multiSeriesDescriptionShort[ms] = multiSeriesDescription[ms];
+			}
+//		document.getElementById('seriesList').innerHTML += "<font size=-1>[<a href=javascript:changeSeries('" + multiSeries[ms] + "') title=\"" + multiSeriesDescription[ms] + "\">" + multiSeriesDescriptionShort[ms] + "</a>]</font><br>\n"; 
+		document.getElementById('seriesList').innerHTML += "<input type=button onClick=javascript:changeSeries('" + multiSeries[ms] + "') title=\"" + multiSeriesDescription[ms] + "\" value=\"" + multiSeriesDescriptionShort[ms] + "\" style=\"width:120px;\"><br>\n"; 
+		}
+	}
+
+//Function (Basic): Draws on the canvas based on direct call or from adjust() function
+function drawSlice(s, windowCenterAdj, windowWidthAdj, panX, panY, zoomAdj, initialLeftX, initialLeftY, force, alpha) {
+	canvas.height = row[currentSeries];
+	canvas.width = col[currentSeries];
+//	canvasData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+	
+//	document.getElementById('fileProgressBar').innerHTML = zoomAdj;
+	var d = new Date();
+	var startTime = d.getTime();
+
+	document.getElementById('scrollBar').value = s;
+	force = force || 0;
+	alpha = alpha || 255;
+//	if (force == 1) { alert('forced'); }
+	baseX = initialBaseX + panX; // for panning
+	baseY = initialBaseY + panY; 
+		
+	// calculate panning & zooming
+	if (initialLeftX != 0 && initialLeftY != 0) {
+		baseX = panX + initialLeftX - ((initialZoom + zoomAdj) * ((initialLeftX - initialBaseX) / initialZoom));
+		baseY = panY + initialLeftY - ((initialZoom + zoomAdj) * ((initialLeftY - initialBaseY) / initialZoom));
+		}	
+	zoom = initialZoom + zoomAdj;
+
+	if (s != previousS || windowCenterAdj != 0 || windowWidthAdj != 0 || force == 1) { //no need to derive canvasdata if same slice or unchanged window
+		//my simple windowing algoritm because image data-string is 12-bit. HTML5 canvas is 8-bit (grayscale). 
+		//Algorithm needed to parse 12-bit depth into 8-bit depth. 
+		windowCenter = initialWindowCenter + windowCenterAdj;
+		windowWidth = initialWindowWidth + windowWidthAdj; 
+		var low = (windowCenter) - (windowWidth / 2); 
+		var high = (windowCenter) + (windowWidth / 2); 
+		var grad = (high - low) / 255;
+	
+		var p = 0;
+		if (RGB == 1) {
+
+			var pix = [];
+			for (var i = 0; i < row[currentSeries]; i++) {
+				for (var j = 0; j < col[currentSeries]; j++) { 
+					pix[0] = (parseInt(pixelArray[currentSeries][s][p]) + HUcorrection[currentSeries]) * rescaleSlope[currentSeries]; //Red
+					pix[1] = (parseInt(pixelArray[currentSeries][s][p+1]) + HUcorrection[currentSeries]) * rescaleSlope[currentSeries]; //Green
+					pix[2] = (parseInt(pixelArray[currentSeries][s][p+2]) + HUcorrection[currentSeries]) * rescaleSlope[currentSeries]; //Blue
+		
+					for (var q = 0; q < 3; q++) {
+						if (pix[q] < low) { pix[q] = 0; } else
+						if (pix[q] >= low && pix[q] <= high) {
+							pix[q] = (pix[q] - low) / grad;
+							} else
+						if (pix[q] > high) { pix[q] = 255; }
+						pix[q] = Math.round(pix[q]);
+						if (invert == -1) {
+							pix[q] = 255 - pix[q];
+							}
+						}
+					var pixDecAlpha = alpha; //255;
+//					if (ROI[p] == 1) {
+//						pixDecRed = pix;
+//						pixDecGreen = pix;
+//						pixDecBlue = 0;
+//						pixDecAlpha = 120;
+//						}
+					var index = (j + i * canvas.width) * 4;
+					canvasData.data[index + 0] = pix[0];
+					canvasData.data[index + 1] = pix[1];
+					canvasData.data[index + 2] = pix[2];
+					canvasData.data[index + 3] = pixDecAlpha;
+					p += 3;
+					}
+				}
+			} else {  //RGB == 0
+			for (var i = 0; i < row[currentSeries]; i++) {
+				for (var j = 0; j < col[currentSeries]; j++) { 
+					var pix = (parseInt(pixelArray[currentSeries][s][p]) + HUcorrection[currentSeries]) * rescaleSlope[currentSeries];
+				
+					if (pix < low) { pix = 0; } else
+					if (pix >= low && pix <= high) {
+						pix = (pix - low) / grad;
+						} else
+					if (pix > high) { pix = 255; }
+					pix = Math.round(pix);
+					if (invert == -1) {
+						pix = 255 - pix;
+						}
+
+					if (pix < 10 && effectTransparent == true) {
+						var pixDecAlpha = 0;
+						} else {
+						var pixDecAlpha = alpha; //255;
+						}
+//					var pixHi = pix;						
+//					if (ROI[p] == 1) { pixHi = 0; } else { pixHi = pix; }
+					
+//					if (isPointInPoly(polygonPointX, polygonPointY, j, i)) {
+//						var pixHi = 0; 
+//						} else {
+//						var pixHi = pix;
+//						}
+					var pixDecBlue = pix;
+
+					if (ROI[p] == 1) {
+						pixDecRed = pix;
+						pixDecGreen = pix;
+						pix = pix + 50;
+						pixDecBlue = pix - 50;
+						pixDecAlpha = 255; //180
+						}
+
+					var index = (j + i * canvas.width) * 4;
+					canvasData.data[index + 0] = canvasData.data[index + 1] = pix;
+					canvasData.data[index + 2] = pixDecBlue;
+					canvasData.data[index + 3] = pixDecAlpha;
+					p++;
+					}
+				}
+			}
+		}
+//	if (panX != 0 || panY != 0) {
+//		ctx.clearRect(0,0,canvas.width,canvas.height); //erases before pan
+//		}
+
+	ctx.putImageData(canvasData, 0, 0); //draws image in canvas at 0,0
+
+	if (baseX != 0 || baseY != 0 || zoom != 1) { //skip pan / zoom to improve speed
+		if (force == 1 || s != previousS) {
+			img.src = canvas.toDataURL("image/jpeg", 1.0); //image data to image() object for scaling
+			} else {
+			img.src = canvas.toDataURL("image/jpeg", 0.3); //image data to image() object for scaling
+			}
+		ctx.setTransform(1,0,0,1,0,0); //corrects transform before blanking canvas
+		ctx.clearRect(0,0,canvas.width,canvas.height); // blanks canvas
+		ctx.setTransform(zoom, 0, 0, zoom, 0, 0); // applies zoom
+		ctx.drawImage(img,baseX/zoom,baseY/zoom);//draws image in canvas. X,Y based on panX and panY
+		}
+	
+	var d = new Date();
+	var endTime = d.getTime();
+	var renderTime = endTime - startTime;
+
+//	document.getElementById('imageinfo').innerHTML = "Render: " + renderTime + "ms Instance: " + s + " Center: " + Math.round(windowCenter) + " Width: " + Math.round(windowWidth) + " ";
+//	document.getElementById('dcmInfo2').innerHTML = "";
+//	if (TE[s]) { document.getElementById('dcmInfo2').innerHTML += "TE: " + TE[s];	}
+	//update dcmInfo
+	document.getElementById('dcmInfo2').innerHTML = institutionName + "<br>" + studyDescription + "<br>" + seriesDescription[currentSeries];
+	document.getElementById('dcmInfo3').innerHTML = "<hr size=1><center><font size=-1>" + modality + " " + bodyPart + "</font></center>";
+	document.getElementById('dcmInfo3').innerHTML += "<hr size=1>";
+	document.getElementById('dcmInfo3').innerHTML += drawSide('Instance', s, totalSlices);
+	if (sliceLocation[s]) { document.getElementById('dcmInfo3').innerHTML += drawSide('Slice Position', parseFloat(sliceLocation[s],2).toFixed(1), 'mm') };
+	if (TE[currentSeries][s]) { document.getElementById('dcmInfo3').innerHTML += drawSide('TE', TE[currentSeries][s], 'ms');	}
+	if (modality == "CT") { var HU = "HU"; } else { var HU = ""; }
+	document.getElementById('dcmInfo3').innerHTML += drawSide('Center', Math.round(windowCenter), HU);
+	document.getElementById('dcmInfo3').innerHTML += drawSide('Width', Math.round(windowWidth), HU);
+	document.getElementById('dcmInfo3').innerHTML += drawSide('Render', Math.round(renderTime), 'ms');
+	document.getElementById('dcmInfo3').innerHTML += drawSide('Zoom', zoom.toFixed(2), '');
+	document.getElementById('dcmInfo3').innerHTML += "<hr size=1>";
+	if (manufacturerUrl) {
+		document.getElementById('dcmInfo3').innerHTML += "<center><img src=\"" + manufacturerUrl + "\" width=100><br><font size=-1>" + manufacturerModel + "</font></center>";
+		} else {
+		document.getElementById('dcmInfo3').innerHTML += "<center><font size=-1>" + manufacturer + " " + manufacturerModel + "</font></center>";
+		}
+	document.getElementById('dcmInfo3').innerHTML += "<hr size=1>";
+	document.getElementById('dcmInfo3').innerHTML += "<center><font size=-1>Syntax: " + transferSyntaxDescription + "</font></center>";
+	document.getElementById('dcmInfo3').innerHTML += "<hr size=1>";
+	previousS = s;
+	}
+
+//Function (Basic): Send adjustment data to drawSlice. Can actually be inserted into drawSlice(), but for clarity sake I separated it
+function adjust(s, windowCenterAdj, windowWidthAdj, panX, panY, zoomAdj, initialLeftX, initialLeftY) {
+	for (var p = currentSlice + s; p > 0 && p < pixelArray[currentSeries].length; p = p + s) {
+		if (pixelArray[currentSeries][p] != null) {
+			currentSlice = p;
+			polygonPointX = []; // empties polygonPoint array
+			polygonPointY = []; // empties polygonPoint array
+			document.getElementById('dcmInfo4').innerHTML = "" // clears area text
+//			ROI.length = 0;
+			drawSlice(currentSlice, windowCenterAdj, windowWidthAdj, panX, panY, zoomAdj, initialLeftX, initialLeftY);
+			break;
+			}
+		}
+//	if (currentSlice + s >= 1 && pixelArray[currentSlice + s] != null) {
+//		currentSlice = currentSlice + s;
+//		ROI.length = 0;
+//		drawSlice(currentSlice, windowCenterAdj, windowWidthAdj, panX, panY, zoomAdj, initialLeftX, initialLeftY);
+//		} 
+	}
+
+//Function (Basic): Send scrollbar info to DrawSlice
+function slideScrollBar() {
+	currentSlice = parseInt(document.getElementById('scrollBar').value);
+	drawSlice(currentSlice, 0,0,0,0,0,0,0,0);
+	}	
+	
+//Function (Basic): Change series
+function changeSeries(seriesInstanceUID) {
+	currentSeries  = seriesInstanceUID;
+	ROI = [];
+	
+	canvas.height = row[seriesInstanceUID];
+	canvas.width = col[seriesInstanceUID];
+	canvasData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+	canvasDataBeforeGraphics = ctx.getImageData(0, 0, canvas.width, canvas.height);	
+
+	// set the maximum value of scrollBar
+	if (numberOfFrames > 1) { document.getElementById('scrollBar').max = parseInt(numberOfFrames); } else { document.getElementById('scrollBar').max = parseInt(pixelArray[currentSeries].length - 1); }
+
+	resizeElements();
+	currentSlice = 1;
+	drawSlice(1,0,0,0,0,0,0,0,1);	
+	}
+	
+//Function (Tool): Change windows
+function setWindow(winCenter, winWidth) {
+	if (winCenter == 'default') { winCenter = defaultWindowCenter; }
+	if (winWidth == 'default') { winWidth = defaultWindowWidth; }
+	ROI.length = 0;
+	windowCenter = winCenter;
+	windowWidth = winWidth;
+	initialWindowCenter = windowCenter;
+	initialWindowWidth = windowWidth;
+	drawSlice(currentSlice,0,0,0,0,0,0,0,1);
+	}
+
+//Function (Tool): Invert image
+function invertWindow() {
+	ROI.length = 0;
+	if (invert == 1) {
+		invert = -1;
+		} else {
+		invert = 1;
+		}
+	drawSlice(currentSlice,0,0,0,0,0,0,0,1);
+	}
+
+//Function (Tool): Reset all settings
+function resetAll() {
+	baseX = 0;
+	baseY = 0;
+	zoom = 1;
+	initialBaseX = 0;
+	initialBaseY = 0;
+	initialZoom = 1;
+	invert = 1; 
+	ROI.length = 0;
+	windowCenter = defaultWindowCenter;
+	windowWidth = defaultWindowWidth;
+	ctx.setTransform(1,0,0,1,0,0);
+	drawSlice(currentSlice,0,0,0,0,0,0,0,1);
+	}
+
+//Function (Tool): Change special effects
+function changeEffect(effect) {
+	if (effect == 'transparent') {
+		var iconTransparent = document.getElementById('iconTransparent');
+		if  (effectTransparent == true) {
+			iconTransparent.style.backgroundColor = "#CCC";
+			iconTransparent.style.borderColor = "#666";
+			effectTransparent = false;
+			} else {
+			iconTransparent.style.backgroundColor = "#CCF";
+			iconTransparent.style.borderColor = "#66F";
+			effectTransparent = true;
+			}
+		drawSlice(currentSlice,0,0,0,0,0,0,0,1);
+		}
+	if (effect == 'background') {
+		var iconTransparent = document.getElementById('iconBackground');
+		var imgBackground = document.getElementById('effectBackground');
+		if  (effectBackground == true) {
+			iconBackground.style.backgroundColor = "#CCC";
+			iconBackground.style.borderColor = "#666";
+			imgBackground.style.display = "none";
+			effectBackground = false;
+			} else {
+			iconBackground.style.backgroundColor = "#CCF";
+			iconBackground.style.borderColor = "#66F";
+			imgBackground.style.display = "block";
+			effectBackground = true;
+			}
+		}
+	if (effect == 'nextBackground') {
+		currentBackground++;
+		if (currentBackground >= backgroundImages.length) {
+			currentBackground = 0;
+			}
+		document.getElementById('backgroundImage').src = backgroundImages[currentBackground];
+		}
+	if (effect == 'glow') {
+		if (document.getElementById('myCanvas').style["animation"] != "") {
+			document.getElementById('myCanvas').style["animation"] = "";
+			iconGlow.style.backgroundColor = "#CCC";
+			iconGlow.style.borderColor = "#666";	
+			} else {
+			document.getElementById('myCanvas').style["animation"] = "effectGlow 5s infinite";
+			iconGlow.style.backgroundColor = "#CCF";
+			iconGlow.style.borderColor = "#66F";				
+			}
+		}
+	}
+
+//BEGIN MOUSE EVENTS ON CANVAS
+canvas.addEventListener('mousedown', mouseDownListener, false);
+canvas.addEventListener('wheel',function(evt){ //'mousewheel'
+    mouseWheel(evt);
+    return false;
+	}, false);
+canvas.addEventListener('contextmenu', blockContextMenu);
+//document.addEventListener('contextmenu', blockContextMenu); //dammit, right click fails to open context when clicked outside. Need to be fixed.
+
+var initialLeftX;
+var initialLeftY;
+var whichButton; // because mousemove doesn't recognize evt.button in Firefox
+var leftButtonMode = "default";
+
+//mousewheel scrolls the stack
+function mouseWheel(evt) {
+	evt.preventDefault();
+	if (evt.deltaY > 0) { 
+		adjust(1,0,0,0,0,0,0,0);
+		} else {
+		adjust(-1,0,0,0,0,0,0,0);
+		}
+	}
+
+function mouseDownListener(evt) {
+	whichButton = evt.button;
+	//getting mouse position correctly, being mindful of resizing that may have occured in the browser:
+	var bRect = canvas.getBoundingClientRect();
+	mouseX = (evt.clientX - bRect.left)*(canvas.width/bRect.width);
+	mouseY = (evt.clientY - bRect.top)*(canvas.height/bRect.height);
+//	document.getElementById('fileProgressBar').innerHTML = mouseX + " | " + mouseY;
+	initialLeftX = mouseX;
+	initialLeftY = mouseY;
+	initialBaseX = baseX; //for centered zooming
+	initialBaseY = baseY; //for centered zooming
+	initialZoom = zoom; // for centered zooming
+	initialWindowCenter = windowCenter;
+	initialWindowWidth = windowWidth;
+	canvasDataBeforeGraphics = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+	window.addEventListener("mousemove", mouseMoveListener, false);
+	canvas.removeEventListener("mousedown", mouseDownListener, false);
+	window.addEventListener("mouseup", mouseUpListener, false);
+	if (whichButton == 0 && leftButtonMode == "pixel") { //left button - pixel lens
+		pixelLens(mouseX, mouseY);
+		}
+	if (whichButton == 0 && leftButtonMode == "polygon") { //left button - pixel lens
+		drawPolygon(mouseX, mouseY);
+		}
+	}
+	
+function mouseMoveListener(evt) {
+	var posX;
+	var posY;
+	//getting mouse position correctly 
+	var bRect = canvas.getBoundingClientRect();
+	mouseX = (evt.clientX - bRect.left)*(canvas.width/bRect.width);
+	mouseY = (evt.clientY - bRect.top)*(canvas.height/bRect.height);
+	var leftXadj = mouseX - initialLeftX;
+	var leftYadj = mouseY - initialLeftY;
+	if (whichButton == 0 && leftButtonMode == "default") { //left button - panning
+		adjust(0,0,0,leftXadj,leftYadj,0,0,0,0,0);
+		}
+	if (whichButton == 0 && leftButtonMode == "line") { //left button - draw straight line
+		drawLine(leftXadj,leftYadj);
+		}
+	if (whichButton == 0 && leftButtonMode == "angle") { //left button - draw straight line
+		drawAngle(leftXadj,leftYadj);
+		}
+	if (whichButton == 0 && leftButtonMode == "circle") { //left button - draw straight line
+		drawCircle(leftXadj,leftYadj,mouseX,mouseY);
+		}
+	if (whichButton == 0 && leftButtonMode == "parallel") { //left button - draw straight line
+		drawParallel(leftXadj,leftYadj,mouseX,mouseY);
+		}
+	if (whichButton == 1) { //middle button
+		adjust(0,0,0,0,0,(0-(leftXadj + leftYadj)*10) / 1000, initialLeftX, initialLeftY);
+		}
+	if (whichButton == 2) { //right button - windowing
+		adjust(0,-leftYadj,leftXadj,0,0,0,0,0,0,0);
+		}
+	}		
+
+function mouseUpListener(evt) {
+	initialZoom = zoom;
+	initialBaseX = baseX;
+	initialBaseY = baseY;
+	initialWindowCenter = windowCenter;
+	initialWindowWidth = windowWidth;
+	canvas.addEventListener("mousedown", mouseDownListener, false);
+	window.removeEventListener("mouseup", mouseUpListener, false);
+	window.removeEventListener("mousemove", mouseMoveListener, false);
+	if (leftButtonMode == "angle") {
+		if (angleOneRead == 0) {
+			angleOne = angleCurrent;
+			angleOneRead = 1;
+			} else {
+			angleOneRead = 0;
+			}
+		}
+	if (leftButtonMode == "parallel") {
+		if (angleOneRead == 0) {
+			angleOne = angleCurrent;
+			angleOneRead = 1;
+			} else
+		if (angleOneRead == 1) {
+			x1P1 = xP1;
+			y1P1 = yP1;
+			x1P2 = xP2;
+			y1P2 = yP2;
+			}
+		}
+	if (leftButtonMode == "default" || evt.button == 1 || evt.button == 2) { drawSlice(currentSlice,0,0,0,0,0,0,0,1); }
+	}
+//disables right click context menu
+function blockContextMenu(evt) {
+	evt.preventDefault();
+	}
+
+//BEGIN TOUCH EVENTS ON CANVAS
+canvas.addEventListener('touchstart', touchDownListener, false);
+
+function touchDownListener(evt) {
+	evt.preventDefault(); // disable browser pinch zoom
+	//getting mouse position correctly, being mindful of resizing that may have occured in the browser:
+	var bRect = canvas.getBoundingClientRect();
+	mouseX = (evt.touches[0].clientX - bRect.left)*(canvas.width/bRect.width);
+	mouseY = (evt.touches[0].clientY - bRect.top)*(canvas.height/bRect.height);
+	initialLeftX = mouseX;
+	initialLeftY = mouseY;
+	initialBaseX = baseX; //for centered zooming
+	initialBaseY = baseY; //for centered zooming
+	initialZoom = zoom; // for centered zooming
+	initialWindowCenter = windowCenter;
+	initialWindowWidth = windowWidth;
+	canvasDataBeforeGraphics = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+	window.addEventListener("touchmove", touchMoveListener, false);
+	canvas.removeEventListener("touchstart", touchDownListener, false);
+	window.addEventListener("touchend", touchUpListener, false);
+	if (leftButtonMode == "pixel") { //left button - pixel lens
+		pixelLens(mouseX, mouseY);
+		}
+	if (leftButtonMode == "polygon") { //left button - pixel lens
+		drawPolygon(mouseX, mouseY);
+		}
+	}
+	
+function touchMoveListener(evt) {
+	var posX;
+	var posY;
+	//getting mouse position correctly 
+	var bRect = canvas.getBoundingClientRect();
+	mouseX = (evt.touches[0].clientX - bRect.left)*(canvas.width/bRect.width);
+	mouseY = (evt.touches[0].clientY - bRect.top)*(canvas.height/bRect.height);
+	var leftXadj = mouseX - initialLeftX;
+	var leftYadj = mouseY - initialLeftY;
+	if (leftButtonMode == "default" && evt.touches.length == 1) { //1 finger: windowing
+		if (initialLeftX / canvas.width < 0.3 || initialLeftX / canvas.width > 0.7) { // do scrolling
+			if (leftYadj > 10) {
+				initialLeftY = mouseY;
+				adjust(1,0,0,0,0,0,0,0);
+				}
+			if (leftYadj < -10) {
+				initialLeftY = mouseY;
+				adjust(-1,0,0,0,0,0,0,0);
+				}		
+			} else { // do windowing
+			adjust(0,-leftYadj,leftXadj,0,0,0,0,0,0,0);
+			}
+		}
+	if (leftButtonMode == "default" && evt.touches.length == 2) { //2 finger: panning
+		//catch 2nd finger touchdown:
+		if (multitouch == false) {
+			mouseX2 = (evt.touches[1].clientX - bRect.left)*(canvas.width/bRect.width); // for pinch-zoom
+			mouseY2 = (evt.touches[1].clientY - bRect.top)*(canvas.height/bRect.height);  // for pinch-zoom
+			initialLeftX2 = mouseX2;
+			initialLeftY2 = mouseY2;
+			multitouch = true;
+		}
+		mouseX2 = (evt.touches[1].clientX - bRect.left)*(canvas.width/bRect.width); // for pinch-zoom
+		mouseY2 = (evt.touches[1].clientY - bRect.top)*(canvas.height/bRect.height);  // for pinch-zoom
+		var leftX2adj = mouseX2 - initialLeftX2;
+		var leftY2adj = mouseY2 - initialLeftY2;
+		var distX = mouseX - mouseX2;
+		var distY = mouseY - mouseY2;
+		var initialDistX = initialLeftX - initialLeftX2;
+		var initialDistY = initialLeftY - initialLeftY2;
+		var leftXCadj = (leftXadj + leftX2adj) / 2;
+		var leftYCadj = (leftYadj + leftY2adj) / 2;
+		var initialLeftXC = ((initialLeftX + initialLeftX2) / 2);
+		var initialLeftYC = ((initialLeftY + initialLeftY2) / 2);
+		adjust(0,0,0,leftXCadj, leftYCadj, (Math.sqrt((distX * distX) + (distY * distY)) - Math.sqrt((initialDistX * initialDistX) + (initialDistY * initialDistY))) / 100, initialLeftXC, initialLeftYC); 
+		}
+	if (leftButtonMode == "line") { //left button - draw straight line
+		drawLine(leftXadj,leftYadj);
+		}
+	if (leftButtonMode == "angle") { //left button - draw straight line
+		drawAngle(leftXadj,leftYadj);
+		}
+	if (leftButtonMode == "circle") { //left button - draw straight line
+		drawCircle(leftXadj,leftYadj,mouseX,mouseY);
+		}
+	if (leftButtonMode == "parallel") { //left button - draw straight line
+		drawParallel(leftXadj,leftYadj,mouseX,mouseY);
+		}
+	}		
+
+function touchUpListener(evt) {
+	multitouch = false;
+	initialZoom = zoom;
+	initialBaseX = baseX;
+	initialBaseY = baseY;
+	initialWindowCenter = windowCenter;
+	initialWindowWidth = windowWidth;
+	canvas.addEventListener("touchstart", touchDownListener, false);
+	window.removeEventListener("touchend", touchUpListener, false);
+	window.removeEventListener("touchmove", touchMoveListener, false);
+	if (leftButtonMode == "angle") {
+		if (angleOneRead == 0) {
+			angleOne = angleCurrent;
+			angleOneRead = 1;
+			} else {
+			angleOneRead = 0;
+			}
+		}
+	if (leftButtonMode == "parallel") {
+		if (angleOneRead == 0) {
+			angleOne = angleCurrent;
+			angleOneRead = 1;
+			} else
+		if (angleOneRead == 1) {
+			x1P1 = xP1;
+			y1P1 = yP1;
+			x1P2 = xP2;
+			y1P2 = yP2;
+			}
+		}
+	if (leftButtonMode == "default") { drawSlice(currentSlice,0,0,0,0,0,0,0,1); }
+	}
+
+//Function (Tool): Change function of left button
+function changeLeftButtonMode(mode) {
+	ROI.length = 0;
+	var iconLine = document.getElementById('iconLine');
+	var iconAngle = document.getElementById('iconAngle');
+	var iconPixel = document.getElementById('iconPixel');
+	var iconPolygon = document.getElementById('iconPolygon');
+	var iconCircle = document.getElementById('iconCircle');
+	var iconParallel = document.getElementById('iconParallel');
+	// null everything first
+	iconLine.style.backgroundColor = "#CCC";
+	iconLine.style.borderColor = "#666";
+	iconAngle.style.backgroundColor = "#CCC";
+	iconAngle.style.borderColor = "#666";
+	iconPixel.style.backgroundColor = "#CCC";
+	iconPixel.style.borderColor = "#666";
+	iconPolygon.style.backgroundColor = "#CCC";
+	iconPolygon.style.borderColor = "#666";
+	iconCircle.style.backgroundColor = "#CCC";
+	iconCircle.style.borderColor = "#666";
+	iconParallel.style.backgroundColor = "#CCC";
+	iconParallel.style.borderColor = "#666";
+
+	if (mode == "line") {
+		if (leftButtonMode == "line") {
+			leftButtonMode = "default";
+			} else {
+			iconLine.style.backgroundColor = "#CCF";
+			iconLine.style.borderColor = "#66F";			
+			leftButtonMode = "line";
+			}
+		}
+	if (mode == "angle") {
+		if (leftButtonMode == "angle") {
+			leftButtonMode = "default";
+			} else {
+			iconAngle.style.backgroundColor = "#CCF";
+			iconAngle.style.borderColor = "#66F";			
+			leftButtonMode = "angle";
+			angleOneRead = 0;
+			}
+		}
+	if (mode == "pixel") {
+		if (leftButtonMode == "pixel") {
+			leftButtonMode = "default";
+			} else {
+			iconPixel.style.backgroundColor = "#CCF";
+			iconPixel.style.borderColor = "#66F";			
+			leftButtonMode = "pixel";
+			}
+		}
+	if (mode == "polygon") {
+		if (leftButtonMode == "polygon") {
+			leftButtonMode = "default";
+			} else {
+			iconPolygon.style.backgroundColor = "#CCF";
+			iconPolygon.style.borderColor = "#66F";			
+			polygonPointX = []; // empties polygonPoint array
+			polygonPointY = []; // empties polygonPoint array
+			document.getElementById('dcmInfo4').innerHTML = "" // clears area text
+			leftButtonMode = "polygon";
+			}
+		}
+	if (mode == "circle") {
+		if (leftButtonMode == "circle") {
+			leftButtonMode = "default";
+			} else {
+			iconCircle.style.backgroundColor = "#CCF";
+			iconCircle.style.borderColor = "#66F";			
+			leftButtonMode = "circle";
+			}
+		}
+	if (mode == "parallel") {
+		if (leftButtonMode == "parallel") {
+			leftButtonMode = "default";
+			} else {
+			iconParallel.style.backgroundColor = "#CCF";
+			iconParallel.style.borderColor = "#66F";			
+			leftButtonMode = "parallel";
+			angleOneRead = 0;
+			x1P1 = y1P1 = x1P2 = y1P2 = "";
+			}
+		}
+	if (leftButtonMode == "default") {
+		document.getElementById('myCanvas').style.cursor = "all-scroll"; 
+		} else {
+		document.getElementById('myCanvas').style.cursor = "crosshair";
+		}
+	}
+
+//Function (Tool): Draw straight line
+function drawLine(leftXadj,leftYadj) {
+	ctx.putImageData(canvasDataBeforeGraphics,0,0);
+	ctx.beginPath();
+	ctx.moveTo(initialLeftX / zoom, initialLeftY / zoom);
+	ctx.lineTo((initialLeftX + leftXadj) / zoom, (initialLeftY + leftYadj) / zoom);
+	ctx.lineWidth = 4 / zoom * col / parseInt(canvas.style.width);
+	ctx.strokeStyle = '#ffff00';
+	ctx.stroke();
+	var distance = Math.round(Math.sqrt((leftXadj * leftXadj * colDistance[currentSeries] * colDistance[currentSeries] / downScale / downScale) + (leftYadj * leftYadj * rowDistance[currentSeries] * rowDistance[currentSeries] / downScale / downScale)) / zoom);
+	ctx.font = (40 / zoom * col[currentSeries] / parseInt(canvas.style.width)) + "px Calibri";
+	ctx.strokeStyle = 'black';
+	ctx.lineWidth = 10 / zoom * col[currentSeries] / parseInt(canvas.style.width);
+	ctx.strokeText(distance + "mm",(initialLeftX + (leftXadj / 2) + 20) / zoom, (initialLeftY + (leftYadj / 2) + 20) / zoom);
+	ctx.fillStyle = '#ffff00';
+	ctx.fillText(distance + "mm",(initialLeftX + (leftXadj / 2) + 20) / zoom, (initialLeftY + (leftYadj / 2) + 20) / zoom);
+	ctx.fillStyle = '#000000';	
+//	document.getElementById('fileProgressBar').innerHTML = col + " | " + canvas.style.width; 
+	}
+
+//Function (Tool): Draw two lines and calculate angle
+function drawAngle(leftXadj,leftYadj) {
+	ctx.putImageData(canvasDataBeforeGraphics,0,0);
+	ctx.beginPath();
+	ctx.moveTo(initialLeftX / zoom, initialLeftY / zoom);
+	ctx.lineTo((initialLeftX + leftXadj) / zoom, (initialLeftY + leftYadj) / zoom);
+	ctx.lineWidth = 4 / zoom * col / parseInt(canvas.style.width);
+	ctx.strokeStyle = '#ffff00';
+	ctx.stroke();
+	angleCurrent = Math.atan2(leftXadj, leftYadj) * 180/Math.PI;
+
+	if (angleOneRead == 1) {
+		angleDiff = Math.abs(angleOne - angleCurrent);
+		if (angleDiff > 180) { angleDiff = angleDiff - 180; }
+		ctx.font = 40 / zoom * col / parseInt(canvas.style.width) + "px Calibri";
+		ctx.strokeStyle = 'black';
+		ctx.lineWidth = 10 / zoom * col / parseInt(canvas.style.width);
+		ctx.strokeText(angleDiff.toFixed(1) + String.fromCharCode(176), (initialLeftX + (leftXadj / 2) + 20) / zoom, (initialLeftY + (leftYadj / 2) + 20) / zoom);
+		ctx.fillStyle = '#ffff00';
+		ctx.fillText(angleDiff.toFixed(1) + String.fromCharCode(176), (initialLeftX + (leftXadj / 2) + 20) / zoom, (initialLeftY + (leftYadj / 2) + 20) / zoom);
+		ctx.fillStyle = '#000000';	
+		}
+	}
+
+//Function (Tool): Draws a dot
+function pixelLens(mouseX, mouseY) {
+	ctx.putImageData(canvasDataBeforeGraphics,0,0);
+	var pixelX = Math.round((mouseX - baseX) / zoom);
+	var pixelY = Math.round((mouseY - baseY) / zoom);
+	var HU = Math.round((parseInt(pixelArray[currentSeries][currentSlice][(pixelY * col[currentSeries]) + pixelX]) + HUcorrection[currentSeries]) * rescaleSlope[currentSeries]);	
+	ctx.font = 40 / zoom * col[currentSeries] / parseInt(canvas.style.width) + "px Calibri";
+	ctx.strokeStyle = 'black';
+	ctx.lineWidth = 10 / zoom * col[currentSeries] / parseInt(canvas.style.width);
+	ctx.strokeText(HU, (mouseX / zoom) + 20 / zoom * col[currentSeries] / parseInt(canvas.style.width), (mouseY / zoom) + 20 / zoom * col[currentSeries] / parseInt(canvas.style.width));
+	ctx.fillStyle = '#ffff00';
+	ctx.fillRect(mouseX / zoom, mouseY / zoom, 6 / zoom  * col[currentSeries] / parseInt(canvas.style.width), 6 / zoom * col[currentSeries] / parseInt(canvas.style.width));
+	ctx.fillText(HU, (mouseX / zoom) + 20 / zoom * col[currentSeries] / parseInt(canvas.style.width), (mouseY / zoom) + 20 / zoom * col[currentSeries] / parseInt(canvas.style.width));
+	ctx.fillStyle = '#000000';	
+	}
+
+//Function (Tool): Draws a polygon and calculates area. DOES NOT CALCULATE ROI YET
+function drawPolygon(mouseX, mouseY) {
+	drawSlice(currentSlice,0,0,0,0,0,0,0,1);
+//	ctx.putImageData(canvasDataBeforeGraphics,0,0);
+	var pixelX = Math.round((mouseX - baseX) / zoom);
+	var pixelY = Math.round((mouseY - baseY) / zoom);
+
+	polygonPointX.push(pixelX);
+	polygonPointY.push(pixelY);
+	var area = polygonArea(polygonPointX, polygonPointY, polygonPointX.length) * colDistance[currentSeries] * rowDistance[currentSeries] / 100 / downScale / downScale; //mm2 to cm2
+	if (sliceLocation[currentSlice]) {
+		if (sliceLocation[currentSlice + 1]) {	
+			var gap = (sliceLocation[currentSlice] - sliceLocation[currentSlice + 1]) / 10; 
+			} else 
+		if (sliceLocation[currentSlice - 1]) {
+			var gap = (sliceLocation[currentSlice - 1] - sliceLocation[currentSlice]) / 10; 
+			}
+		}
+	var sumAndPixels = polygonROI(polygonPointX, polygonPointY); // calculate ROI
+
+	drawSlice(currentSlice,0,0,0,0,0,0,0,1);
+	
+	ctx.fillStyle = '#ff0000';
+	ctx.fillRect((mouseX) / zoom, (mouseY) / zoom, 6 / zoom  * col[currentSeries] / parseInt(canvas.style.width), 6 / zoom * col[currentSeries] / parseInt(canvas.style.width));
+
+	ctx.beginPath();
+	ctx.moveTo(polygonPointX[0] + (baseX / zoom), polygonPointY[0] + (baseY / zoom));
+	for (var c = 0; c < polygonPointX.length; c++) {
+		ctx.lineTo(polygonPointX[c] + (baseX / zoom), polygonPointY[c] + (baseY / zoom));
+		}
+	ctx.closePath();
+	ctx.lineWidth = 4 / zoom * col[currentSeries] / parseInt(canvas.style.width);
+	ctx.strokeStyle = '#ffff00';
+	ctx.stroke();
+
+//	document.getElementById('dcmInfo4').innerHTML = drawSide('Mean SI', Math.round(sumAndPixels[0]/sumAndPixels[1]), '');
+	document.getElementById('dcmInfo4').innerHTML = drawSide('Area', Math.abs(area.toFixed(2)), 'cm<sup><font size=-2>2</font></sup>');
+	if (gap) { document.getElementById('dcmInfo4').innerHTML += drawSide('Gap', Math.abs((gap).toFixed(2)), 'cm'); }
+	if (gap) { document.getElementById('dcmInfo4').innerHTML += drawSide('Volume', Math.abs((area * gap).toFixed(2)), 'cm<sup><font size=-2>3</font></sup>'); }
+
+	}
+
+//Function (Tool): Draws a circular ROI, returns average SI & area	
+function drawCircle(leftXadj, leftYadj, mouseX, mouseY) {
+	ROI.length = 0;
+	ctx.putImageData(canvasDataBeforeGraphics,0,0);
+	var radius = Math.round(Math.sqrt((leftXadj * leftXadj) + (leftYadj * leftYadj)) / zoom);
+	var circlePix = [];
+	var c = 0;
+	var sum = 0;
+	var colLengthMax = 0;
+	for (crow = Math.round(((initialLeftY - baseY) / zoom) - radius); crow < Math.round(((initialLeftY - baseY) / zoom) + radius); crow++) {
+		var colLength = radius;
+		for (ccol = Math.round(((initialLeftX - baseX) / zoom) - colLength); ccol < Math.round(((initialLeftX - baseX) / zoom)+ colLength); ccol++) {
+			var dist = Math.sqrt(((((initialLeftX - baseX) / zoom) - ccol) * (((initialLeftX - baseX) / zoom) - ccol)) + ((((initialLeftY - baseY) / zoom) - crow) * (((initialLeftY - baseY) / zoom) - crow)));
+			if (dist <= radius) {
+				ROI[(crow * col[currentSeries]) + ccol] = 1;
+				sum = sum + (parseInt(pixelArray[currentSeries][currentSlice][(crow * col[currentSeries]) + ccol]) + HUcorrection[currentSeries]) * rescaleSlope[currentSeries];
+				c++;
+				}
+			}
+		}
+	var area = Math.PI * radius * radius * colDistance[currentSeries] * rowDistance[currentSeries] / 100;
+	drawSlice(currentSlice,0,0,0,0,0,0,0,1);
+	
+	ctx.beginPath();
+	ctx.arc((initialLeftX / zoom), (initialLeftY / zoom), radius, 0, 2 * Math.PI, false);
+	ctx.globalAlpha = 1;
+	ctx.lineWidth = 4 / zoom * col[currentSeries] / parseInt(canvas.style.width);
+	ctx.strokeStyle = '#ffff00';
+	ctx.stroke();
+	ctx.font = 40 / zoom * col[currentSeries] / parseInt(canvas.style.width) + "px Calibri";
+	ctx.strokeStyle = 'black';
+	ctx.lineWidth = 10 / zoom * col[currentSeries] / parseInt(canvas.style.width);
+	ctx.strokeText(Math.round(sum / c), (mouseX / zoom) + 20, (mouseY / zoom) + 20); //(initialLeftX / zoom) - 10, (initialLeftY / zoom) + 5); 
+	ctx.fillStyle = '#ffff00';
+	ctx.fillText(Math.round(sum / c), (mouseX / zoom) + 20, (mouseY / zoom) + 20); //(initialLeftX / zoom) - 10, (initialLeftY / zoom) + 5);
+	ctx.fillStyle = '#000000';	
+
+	document.getElementById('dcmInfo4').innerHTML = drawSide('Mean SI', Math.round(sum / c), '');
+	document.getElementById('dcmInfo4').innerHTML += drawSide('Area', Math.abs(area.toFixed(2)), 'cm<sup><font size=-2>2</font></sup>');
+	}
+
+//Function (Tool): Calculates polygon area from multiple points
+function polygonArea(X, Y, numPoints) { 
+	//http://www.mathopenref.com/coordpolygonarea2.html
+	var area = 0;         // Accumulates area in the loop
+	var j = numPoints - 1;  // The last vertex is the 'previous' one to the first
+
+	for (i = 0; i < numPoints; i++) {
+		area = area +  (X[j] + X[i]) * (Y[j] - Y[i]); 
+		j = i;  //j is previous vertex to i
+		}
+	return area / 2;
+	}
+
+//Function (Tool): Calculates ROI from a polygon. Must be closed and rounded polygon
+function polygonROI(X, Y) {
+	ROI.length = 0;
+	var sum = 0;
+	var numberOfPixels = 1;
+	
+	if (X.length > 2) {
+		//to avoid the uppermost and lowermost Ys getting un-subtracted lines
+		var Ymin = Y[0];
+		var Ymax = Y[0];
+		for (var k = 0; k < Y.length; k++) {
+			if (Ymin > Y[k]) { Ymin = Y[k]; }
+			if (Ymax < Y[k]) { Ymax = Y[k]; }
+			}
+
+		for (var k = 0; k < X.length; k++) {
+			var l = k + 1;
+			if (l == X.length) { l = 0; } // close to first polygon point
+			var m = l + 1;
+			if (m == X.length) { m = 0; } // close to first polygon point
+			var j = k - 1;
+			if (j == -1) { j = X.length - 1; } // close to last polygon point
+
+			
+//			if (Y[k] == Y[l]) { Y[l]++; } // avoid division by zero
+			
+//			if (Y[k] < Y[l]) { var direction = 1; } else 
+//			if (Y[k] > Y[l]) { var direction = -1; } 
+			
+			var Xgrad = (X[l] - X[k]) / (Y[l] - Y[k]);
+			
+//			//to avoid the uppermost and lowermost Ys getting un-subtracted lines
+//			if (Y[k] == Ymin) { var minCorrection = 1; } else { var minCorrection = 0; }
+//			if (Y[l] == Ymax) { var maxCorrection = 1; } else { var maxCorrection = 0; }
+
+			if (Y[k] >= Y[j] && Y[k] >= Y[l]) { var minCorrection = -1; } else { var minCorrection = 0; }
+			if (Y[l] <= Y[k] && Y[l] <= Y[m]) { var maxCorrection = -1; } else { var maxCorrection = 0; }
+
+			if (Y[k] + minCorrection < Y[l] + maxCorrection) { var direction = 1; } else 
+			if (Y[k] + minCorrection > Y[l] + maxCorrection) { var direction = -1; } //  else { alert('no direction!'); }
+			
+//			var minCorrection = 0;
+//			var maxCorrection = 0;
+			
+			for (var i = Y[k] + minCorrection; i != Y[l] + maxCorrection; i += direction) {
+				for (var j = 0; j < X[k] + Math.round(((i - Y[k]) * Xgrad)); j++) {
+					if (ROI[(i * col[currentSeries]) + j] == 1) {
+						ROI[(i * col[currentSeries]) + j] = 0; 
+						} else {
+						ROI[(i * col[currentSeries]) + j] = 1; 
+						sum = sum + (parseInt(pixelArray[currentSeries][currentSlice][(i * col[currentSeries]) + j]) + HUcorrection[currentSeries]) * rescaleSlope[currentSeries];	
+						numberOfPixels++;
+						}
+					}
+				}
+//			drawSlice(currentSlice,0,0,0,0,0,0,0,1);
+//			alert(minCorrection + "\n" + maxCorrection);		
+			
+			}
+		}
+	var sumAndPixels = [sum, numberOfPixels];
+	return sumAndPixels;
+	}
+
+//Function (Tool): Draw parallel lines
+function drawParallel(leftXadj,leftYadj) {
+	ctx.putImageData(canvasDataBeforeGraphics,0,0);
+	ctx.beginPath();
+	if (angleOneRead == 0) {
+		ctx.moveTo(initialLeftX / zoom, initialLeftY / zoom);
+		ctx.lineTo((initialLeftX + leftXadj) / zoom, (initialLeftY + leftYadj) / zoom);
+		ctx.lineWidth = 4 / zoom * col / parseInt(canvas.style.width);
+		ctx.strokeStyle = '#ffff00';
+		ctx.stroke();
+		angleCurrent = Math.atan2(leftXadj, leftYadj) * 180/Math.PI;
+		}
+	if (angleOneRead == 1) {
+		var anglePerpendicular = angleOne - 90;
+//		var angleValueX = Math.sin(anglePerpendicular / 180 * Math.PI); 
+//		var angleValueY = Math.cos(anglePerpendicular / 180 * Math.PI);
+		xP1 = ((initialLeftX + leftXadj) / zoom) + canvas.width * Math.sin(anglePerpendicular / 180 * Math.PI);
+		yP1 = ((initialLeftY + leftYadj) / zoom) + canvas.height * Math.cos(anglePerpendicular / 180 * Math.PI);;
+		xP2 = ((initialLeftX + leftXadj) / zoom) - canvas.width * Math.sin(anglePerpendicular / 180 * Math.PI);
+		yP2 = ((initialLeftY + leftYadj) / zoom) - canvas.height * Math.cos(anglePerpendicular / 180 * Math.PI);;
+
+		ctx.moveTo(xP1, yP1);
+		ctx.lineTo(xP2, yP2);
+		ctx.lineWidth = 4 / zoom * col / parseInt(canvas.style.width);
+		ctx.strokeStyle = '#ffff00';
+		ctx.stroke();
+
+		if (x1P1 != "") {
+			var m = (y1P1 - y1P2) / (x1P1 - x1P2);
+			var b1 = y1P1 - (x1P1 * m);
+			var b2 = yP1 - (xP1 * m);
+			var distance = Math.abs(b2 - b1) / Math.sqrt((m * m) + 1) * Math.sqrt(colDistance[currentSeries] * rowDistance[currentSeries]);			
+			ctx.font = 40 / zoom * col[currentSeries] / parseInt(canvas.style.width) + "px Calibri";
+			ctx.strokeStyle = 'black';
+			ctx.lineWidth = 10 / zoom * col / parseInt(canvas.style.width);
+			ctx.strokeText(distance.toFixed(1) + "mm", (initialLeftX + (leftXadj / 2) + 20) / zoom, (initialLeftY + (leftYadj / 2) + 20) / zoom);
+			ctx.fillStyle = '#ffff00';
+			ctx.fillText(distance.toFixed(1) + "mm", (initialLeftX + (leftXadj / 2) + 20) / zoom, (initialLeftY + (leftYadj / 2) + 20) / zoom);
+			ctx.fillStyle = '#000000';	
+			}
+		}
+	}
+
+//Function (Tool): Calculate Standard Deviation
+//http://derickbailey.com/2014/09/21/calculating-standard-deviation-with-array-map-and-array-reduce-in-javascript/
+function standardDeviation(values){
+	var avg = average(values);
+  
+	var squareDiffs = values.map(function(value){
+		var diff = value - avg;
+		var sqrDiff = diff * diff;
+		return sqrDiff;
+	});
+  
+	var avgSquareDiff = average(squareDiffs);
+
+	var stdDev = Math.sqrt(avgSquareDiff);
+	return stdDev;
+	}
+
+function average(data){
+	var sum = data.reduce(function(sum, value){
+		return sum + value;
+		}, 0);
+
+	var avg = sum / data.length;
+	return avg;
+	}
+	
+//Function (Tool): Loads the T2star ic.html
+function loadT2Star() {
+	//check whether ROI is drawn
+	if (ROI.length == 0) {
+		alert('Error:\nNo Region Of Interest Drawn\n\nPlease Draw ROI Using Circle Tool');
+		return;
+		}
+		
+	//to send slice to IC.html 
+	sessionStorage.dt = canvas.toDataURL('image/png');
+	var SI = [];
+	var SD = [];
+	var SIstring = "";
+	var TEstring = "";
+	var SDstring = "";
+	
+	for (s = 1; s < TE[currentSeries].length; s++) {
+		var pixelSI = []; //for SD calculation
+		// for Philips that like to repeat the sequence twice - don't know why yet...
+		if (s > 1) {
+			if (parseFloat(TE[currentSeries][s]) < parseFloat(TE[currentSeries][s-1])) { break; }
+			}
+		var p = 0;
+		var sum = 0;
+		var c = 0;
+		for (var i = 0; i < row[currentSeries]; i++) {
+			for (var j = 0; j < col[currentSeries]; j++) { 
+				if (ROI[p] == 1) {
+					sum = sum + (parseInt(pixelArray[currentSeries][s][p]) + HUcorrection[currentSeries]) * rescaleSlope[currentSeries];
+					pixelSI[c] = (parseInt(pixelArray[currentSeries][s][p]) + HUcorrection[currentSeries]) * rescaleSlope[currentSeries];
+					c++;
+					}	
+				p++;
+				}
+			}
+		SI[s] = sum / c;
+		SD[s] = standardDeviation(pixelSI);
+		TEstring = TEstring + parseFloat(TE[currentSeries][s]).toFixed(2) + ",";
+		SIstring = SIstring + parseInt(SI[s]) + ",";
+		SDstring = SDstring + parseFloat(SD[s]).toFixed(2) + ",";
+		}
+//		alert(SIstring);
+	TEstring = TEstring.slice(0, -1);
+	SIstring = SIstring.slice(0, -1);
+	SDstring = SDstring.slice(0, -1);
+
+	document.getElementById('showCurveIFrame').src = 'ic.html?TEstring=' + TEstring + '&SIstring=' + SIstring + '&SDstring=' + SDstring + '&patientName=' + patientName + '&patientMRN=' + patientMRN + '&studyDate=' + studyDate + '&col=' + col[currentSeries] + '&row=' + row[currentSeries];
+	
+	document.getElementById('showCurveDiv').style.left =((window.innerWidth - 900) / 2) + 'px';
+	document.getElementById('showCurveDiv').style.display = "block";
+	}
+
+//Function (Tool): Closes the T2star iframe
+function closeShowCurveDiv() {
+	document.getElementById('showCurveDiv').style.display = 'none';
+	}
+
+//Function (Basic): Shows information DIV	
+function toggleInfoDiv(whichDiv) {
+	document.getElementById(whichDiv).style.left =((window.innerWidth - 650) / 2) + 'px';
+	if (document.getElementById(whichDiv).style.display == 'block') {
+		document.getElementById(whichDiv).style.display = 'none';
+		} else {
+		document.getElementById(whichDiv).style.display = 'block';
+		}
+	}
+
+//Function (Basic): Sends dropped files to readFiles	
+function handleFileSelect(evt) {
+	var d = new Date();
+	startFileTime = d.getTime();	
+	
+	evt.stopPropagation();
+	evt.preventDefault();
+
+	var dcmFiles = evt.dataTransfer; 
+	fileProgressArea.innerHTML = "Loading...<br><font size=+1>This may take up to a few minutes for large / multiple DICOM files...</font>";
+
+	if(dcmFiles.files[0].name.match(/\.zip/)) {
+		unzip(dcmFiles.files[0]);
+		} else {
+		//original code
+		totalSlices = dcmFiles.files.length;
+		for (var i = 0; i < dcmFiles.files.length; i++) { readFiles(dcmFiles.files[i]); }
+		}
+	}
+
+function handleDragOver(evt) {
+	evt.stopPropagation();
+	evt.preventDefault();
+	evt.dataTransfer.dropEffect = 'copy'; // Explicitly show this is a copy.
+	}
+
+/* //Warn if dropping another file into open viewport - not working well.
+function warnDrop(evt) {
+	evt.stopPropagation();
+	evt.preventDefault();
+	if (confirm('Cannot load new study before closing current study.\n\nClose current study?')) {
+		window.location.reload();
+		}
+	}
+*/
+
+// Setup the dnd listeners.
+var dropZone = document.getElementById('fileLoaderLanding');
+var viewPort = document.getElementById('viewPort');
+dropZone.addEventListener('dragover', handleDragOver, false);
+dropZone.addEventListener('drop', handleFileSelect, false);
+//viewPort.addEventListener('dragover', warnDrop, false);
+
+//multiSeries not working yet
+function loadOverlayOriginal() {
+	var overlay1 = document.getElementById('overlay1').value;
+	var overlay2 = document.getElementById('overlay2').value;
+	var overlayPixelArray = [];
+	for (var p = 0; p < pixelArray[overlay1].length; p++) {
+		if (pixelArray[overlay1][p] + HUcorrection < -10) {
+			var corrected1 = 1000; 
+			} else {
+			var corrected1 = pixelArray[overlay1][p];
+			}
+		if (pixelArray[overlay2][p] + HUcorrection < -10) {
+			var corrected2 = 1000; 
+			} else {
+			var corrected2 = pixelArray[overlay2][p];
+			}
+			overlayPixelArray[p] = (corrected1 + corrected2) / 2;
+//			overlayPixelArray[p] = (pixelArray[overlay1][p] + pixelArray[overlay2][p]) / 2;
+		}
+	p = 0;
+	var low = (windowCenter) - (windowWidth / 2); 
+	var high = (windowCenter) + (windowWidth / 2); 
+	var grad = (high - low) / 255;
+	for (var i = 0; i < row; i++) {
+		for (var j = 0; j < col; j++) { 
+			var pix = (parseInt(overlayPixelArray[p]) + HUcorrection) * rescaleSlope;
+			if (pix < low) { pix = 0; } else
+			if (pix >= low && pix <= high) {
+				pix = (pix - low) / grad;
+				} else
+			if (pix > high) { pix = 255; }
+			pix = Math.round(pix);
+			if (invert == -1) {
+				pix = 255 - pix;
+				}
+			var pixDecRed = pix;
+			var pixDecGreen = pix;
+			var pixDecBlue = pix;
+			var pixDecAlpha = 255;
+
+			var index = (j + i * canvas.width) * 4;
+			canvasData.data[index + 0] = pixDecRed;
+			canvasData.data[index + 1] = pixDecGreen;
+			canvasData.data[index + 2] = pixDecBlue;
+			canvasData.data[index + 3] = pixDecAlpha;
+			p++;
+			}
+		}
+	ctx.putImageData(canvasData, 0, 0); //draws image in canvas at 0,0
+	img.src = canvas.toDataURL(); //image data to image() object for scaling
+	ctx.setTransform(1,0,0,1,0,0); 		  	//blanks canvas
+	ctx.fillRect(0,0,canvas.width,canvas.height); 	//blanks canvas
+	ctx.setTransform(zoom, 0, 0, zoom, 0, 0); // applies zoom
+	ctx.drawImage(img,baseX/zoom,baseY/zoom);//draws image in canvas. X,Y based on panX and panY
+	
+//	drawSlice(currentSlice,0,0,0,0,0,0,0,0,50);
+	}
+
+function loadOverlay() { // colored overlay
+	p = 0;
+	var low = (windowCenter) - (windowWidth / 2); 
+	var high = (windowCenter) + (windowWidth / 2); 
+	var grad = (high - low) / 255;
+	var pix = [];
+
+	for (var i = 0; i < row[currentSeries]; i++) {
+		for (var j = 0; j < col[currentSeries]; j++) { 
+			for (var x = 1; x <= 2; x++) {
+				pix[x] = (parseInt(pixelArray[currentSeries][document.getElementById('overlay' + x).value][p]) + HUcorrection[currentSeries]) * rescaleSlope[currentSeries];
+				if (pix[x] < low) { pix[x] = 0; } else
+				if (pix[x] >= low && pix[x] <= high) {
+					pix[x] = (pix[x] - low) / grad;
+					} else
+				if (pix[x] > high) { pix[x] = 255; }
+				pix[i] = Math.round(pix[x]);
+				if (invert == -1) {
+					pix[x] = 255 - pix[x];
+					}
+				}
+				
+			var pixDecRed = pix[1];
+			var pixDecGreen = pix[2];
+			var pixDecBlue = 0;
+			var pixDecAlpha = 255;
+
+			var index = (j + i * canvas.width) * 4;
+			canvasData.data[index + 0] = pixDecRed;
+			canvasData.data[index + 1] = pixDecGreen;
+			canvasData.data[index + 2] = pixDecBlue;
+			canvasData.data[index + 3] = pixDecAlpha;
+			p++;
+			}
+		}
+	ctx.putImageData(canvasData, 0, 0); //draws image in canvas at 0,0
+	img.src = canvas.toDataURL(); //image data to image() object for scaling
+	ctx.setTransform(1,0,0,1,0,0); 		  	//blanks canvas
+	ctx.fillRect(0,0,canvas.width,canvas.height); 	//blanks canvas
+	ctx.setTransform(zoom, 0, 0, zoom, 0, 0); // applies zoom
+	ctx.drawImage(img,baseX/zoom,baseY/zoom);//draws image in canvas. X,Y based on panX and panY
+	
+//	drawSlice(currentSlice,0,0,0,0,0,0,0,0,50);
+	}
+
+	
+	// Function (basic): Resize and reposition elements on load and every time there is a window.resize
+function resizeElements() {
+
+/*	if (mobileAndTabletcheck()) { //mobile
+		if ((window.innerHeight / canvas.height) <= (window.innerWidth / canvas.width)) {
+			var canvasResizeFactor = window.innerHeight / canvas.height;
+			} else {
+			var canvasResizeFactor = window.innerWidth / canvas.width;
+			}
+//		if (window.innerWidth < 310 + (col * canvasResizeFactor * 0.8)) { //narrow window
+//			var windowPadding = (window.innerWidth - 310) / (col * canvasResizeFactor);
+//			} else {
+//			var windowPadding = 0.8;
+//			}
+		var windowPadding = 1.0; //fullscreen
+	//	alert(window.innerWidth + "\n" + window.innerHeight + "\n" + col + "\n" + row + "\n" + canvasResizeFactor + "\n" + windowPadding);
+		canvas.style.width = col * canvasResizeFactor * windowPadding;
+		canvas.style.height = row * canvasResizeFactor * windowPadding;
+	//	alert(canvas.style.width);
+		document.getElementById('patientInfo').style.right = window.innerWidth; //(window.innerWidth - (col * canvasResizeFactor * windowPadding)) / 2;
+		document.getElementById('techInfo').style.left = (window.innerWidth - (col * canvasResizeFactor * windowPadding)) / 2 ;
+		document.getElementById('techInfo').style.bottom = window.innerHeight - (60 + (row * canvasResizeFactor * 0.8));
+		document.getElementById('sideInfo').style.right = 0; ((window.innerWidth + (col * canvasResizeFactor * windowPadding)) / 2 ) + 10;
+		document.getElementById('toolbox').style.left = window.innerWidth - 140; //((window.innerWidth + (col * canvasResizeFactor * windowPadding)) / 2) + 20;
+		document.getElementById('divScrollBar').style.width = row * canvasResizeFactor * windowPadding;
+		document.getElementById('divScrollBar').style.top = 56 + (row * canvasResizeFactor * windowPadding) / 2;
+		document.getElementById('divScrollBar').style.left = window.innerWidth - ((col - row) * canvasResizeFactor * windowPadding) / 2 - 10; //(window.innerWidth / 2) + ((col - row) * canvasResizeFactor * windowPadding / 2) + 10;		
+		} else { //non-mobile */
+		if ((window.innerHeight / canvas.height) <= (window.innerWidth / canvas.width)) {
+			var canvasResizeFactor = window.innerHeight / canvas.height;
+			} else {
+			var canvasResizeFactor = window.innerWidth / canvas.width;
+			}
+		if (window.innerWidth < 310 + (col[currentSeries] * canvasResizeFactor * 0.8)) { //narrow window
+			var windowPadding = (window.innerWidth - 310) / (col[currentSeries] * canvasResizeFactor);
+			} else {
+			var windowPadding = 0.8;
+			}
+	//	alert(window.innerWidth + "\n" + window.innerHeight + "\n" + col + "\n" + row + "\n" + canvasResizeFactor + "\n" + windowPadding);
+		canvas.style.width = col[currentSeries] * canvasResizeFactor * windowPadding;
+		canvas.style.height = row[currentSeries] * canvasResizeFactor * windowPadding;
+	//	alert(canvas.style.width);
+		document.getElementById('patientInfo').style.right = (window.innerWidth - (col[currentSeries] * canvasResizeFactor * windowPadding)) / 2;
+		document.getElementById('techInfo').style.left = (window.innerWidth - (col[currentSeries] * canvasResizeFactor * windowPadding)) / 2 ;
+		document.getElementById('techInfo').style.bottom = window.innerHeight - (60 + (parseInt(canvas.style.height)));
+		document.getElementById('sideInfo').style.right = ((window.innerWidth + (col[currentSeries] * canvasResizeFactor * windowPadding)) / 2 ) + 10;
+		document.getElementById('toolbox').style.left = ((window.innerWidth + (col[currentSeries] * canvasResizeFactor * windowPadding)) / 2) + 20;
+		document.getElementById('divScrollBar').style.width = row[currentSeries] * canvasResizeFactor * windowPadding;
+		document.getElementById('divScrollBar').style.top = 56 + (row[currentSeries] * canvasResizeFactor * windowPadding) / 2;
+		document.getElementById('divScrollBar').style.left = (window.innerWidth / 2) + ((col[currentSeries] - row[currentSeries]) * canvasResizeFactor * windowPadding / 2) + 10;
+//		}
+	}
+	
+window.onresize = function() {
+	if (t) { //only change canvas size when something has been loaded
+		resizeElements();
+		}
+	};
+
+//Function (Addon): Download current canvas as PNG
+function dlCanvas() {
+	//http://stackoverflow.com/questions/12796513/html5-canvas-to-png-file
+	var dt = canvas.toDataURL('image/png');
+	
+	/* Change MIME type to trick the browser to downlaod the file instead of displaying it */
+	dt = dt.replace(/^data:image\/[^;]*/, 'data:application/octet-stream');
+
+	/* In addition to <a>'s "download" attribute, you can define HTTP-style headers */
+	dt = dt.replace(/^data:application\/octet-stream/, 'data:application/octet-stream;headers=Content-Disposition%3A%20attachment%3B%20filename=' + patientName + studyDescription + currentSlice + '.png');
+
+	this.download = "" + patientName + studyDescription + currentSlice + '.png';
+	this.href = dt;
+	};
+document.getElementById("dl").addEventListener('click', dlCanvas, false);
+
+//Function (Addon): Detect whether mobile or tablet
+window.mobileAndTabletcheck = function() {
+	//http://stackoverflow.com/questions/11381673/detecting-a-mobile-browser
+	var check = false;
+	(function(a){if(/(android|bb\d+|meego).+mobile|avantgo|bada\/|blackberry|blazer|compal|elaine|fennec|hiptop|iemobile|ip(hone|od)|iris|kindle|lge |maemo|midp|mmp|mobile.+firefox|netfront|opera m(ob|in)i|palm( os)?|phone|p(ixi|re)\/|plucker|pocket|psp|series(4|6)0|symbian|treo|up\.(browser|link)|vodafone|wap|windows ce|xda|xiino|android|ipad|playbook|silk/i.test(a)||/1207|6310|6590|3gso|4thp|50[1-6]i|770s|802s|a wa|abac|ac(er|oo|s\-)|ai(ko|rn)|al(av|ca|co)|amoi|an(ex|ny|yw)|aptu|ar(ch|go)|as(te|us)|attw|au(di|\-m|r |s )|avan|be(ck|ll|nq)|bi(lb|rd)|bl(ac|az)|br(e|v)w|bumb|bw\-(n|u)|c55\/|capi|ccwa|cdm\-|cell|chtm|cldc|cmd\-|co(mp|nd)|craw|da(it|ll|ng)|dbte|dc\-s|devi|dica|dmob|do(c|p)o|ds(12|\-d)|el(49|ai)|em(l2|ul)|er(ic|k0)|esl8|ez([4-7]0|os|wa|ze)|fetc|fly(\-|_)|g1 u|g560|gene|gf\-5|g\-mo|go(\.w|od)|gr(ad|un)|haie|hcit|hd\-(m|p|t)|hei\-|hi(pt|ta)|hp( i|ip)|hs\-c|ht(c(\-| |_|a|g|p|s|t)|tp)|hu(aw|tc)|i\-(20|go|ma)|i230|iac( |\-|\/)|ibro|idea|ig01|ikom|im1k|inno|ipaq|iris|ja(t|v)a|jbro|jemu|jigs|kddi|keji|kgt( |\/)|klon|kpt |kwc\-|kyo(c|k)|le(no|xi)|lg( g|\/(k|l|u)|50|54|\-[a-w])|libw|lynx|m1\-w|m3ga|m50\/|ma(te|ui|xo)|mc(01|21|ca)|m\-cr|me(rc|ri)|mi(o8|oa|ts)|mmef|mo(01|02|bi|de|do|t(\-| |o|v)|zz)|mt(50|p1|v )|mwbp|mywa|n10[0-2]|n20[2-3]|n30(0|2)|n50(0|2|5)|n7(0(0|1)|10)|ne((c|m)\-|on|tf|wf|wg|wt)|nok(6|i)|nzph|o2im|op(ti|wv)|oran|owg1|p800|pan(a|d|t)|pdxg|pg(13|\-([1-8]|c))|phil|pire|pl(ay|uc)|pn\-2|po(ck|rt|se)|prox|psio|pt\-g|qa\-a|qc(07|12|21|32|60|\-[2-7]|i\-)|qtek|r380|r600|raks|rim9|ro(ve|zo)|s55\/|sa(ge|ma|mm|ms|ny|va)|sc(01|h\-|oo|p\-)|sdk\/|se(c(\-|0|1)|47|mc|nd|ri)|sgh\-|shar|sie(\-|m)|sk\-0|sl(45|id)|sm(al|ar|b3|it|t5)|so(ft|ny)|sp(01|h\-|v\-|v )|sy(01|mb)|t2(18|50)|t6(00|10|18)|ta(gt|lk)|tcl\-|tdg\-|tel(i|m)|tim\-|t\-mo|to(pl|sh)|ts(70|m\-|m3|m5)|tx\-9|up(\.b|g1|si)|utst|v400|v750|veri|vi(rg|te)|vk(40|5[0-3]|\-v)|vm40|voda|vulc|vx(52|53|60|61|70|80|81|83|85|98)|w3c(\-| )|webc|whit|wi(g |nc|nw)|wmlb|wonu|x700|yas\-|your|zeto|zte\-/i.test(a.substr(0,4)))check = true})(navigator.userAgent||navigator.vendor||window.opera);
+	return check;
+	}
+	
+//SVG for a circle, assign to url
+/*
+var svgdata = '<svg xmlns="http://www.w3.org/2000/svg" width="50" height="50">' +
+			  '<circle cx="25" cy="25" r="20" stroke="grey" stroke-width="3" fill="none">' +
+			  '<animate attributeName="r" from="70" to="100" dur="3s" repeatCount="indefinite" />' +
+			  '</circle>' +
+			  '</svg>';
+*/
+var svgdata = '<svg xmlns="http://www.w3.org/2000/svg" width="50" height="50">' +
+			  '<circle cx="25" cy="25" r="20" stroke="grey" stroke-width="3" fill="none">' +
+			  '<animate id="grow" attributeName="r" from="19" to="20" begin="0s; shrink.end" dur="1s" />' +
+			  '<animate attributeName="stroke" from="grey" to="#336666" begin="0s; shrink.end" dur="1s" />' +
+			  '<animate id="shrink" attributeName="r" from="20" to="19" begin="grow.end" dur="1s" />' +
+			  '<animate attributeName="stroke" from="#336666" to="grey" begin="grow.end" dur="1s" />' +
+			  '</circle>' +
+			  '</svg>';
+			  
+var DOMURL = window.URL || window.webkitURL || window;
+var svg = new Blob([svgdata], {type: 'image/svg+xml;charset=utf-8'});
+var url = DOMURL.createObjectURL(svg);
+//end SVG
+
+function drawSide(name, value, unit) {
+	var txt = "<table width=140 border=0 cellspacing=0><tr><td width=80 style=\"animation: effectBackgroundBlue 5s infinite;\">";
+	txt += "<font size=-1>" + name + "</font><br><font size=+2>" + value + "</font></td><td width=50 align=center style=\"background-image: url('" + url + "'); background-repeat: no-repeat; background-size: 100% 100%; background-position: center; animation: effectBackgroundGrey 5s infinite;\"><font size=+2>" + unit + "</font>";
+	txt += "</td></tr></table>";
+	return txt;
+	}
+
+//////////////////////////////////
+// SVGs
+//////////////////////////////////
+
+// Siemens Logo
+var svgSiemensData = '<svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" width="210mm" height="50mm" style="shape-rendering:geometricPrecision; text-rendering:geometricPrecision; image-rendering:optimizeQuality; fill-rule:evenodd; clip-rule:evenodd" viewBox="0 0 210 50">' +
+				'<defs>' +
+				'<style type="text/css">' +
+				'<![CDATA[' +
+					'.fil0 {fill:#009999}' +
+				']]>' +
+				'</style>' +
+				'</defs>' +
+				'<g id="Ebene_x0020_1">' +
+				'<metadata id="CorelCorpID_0Corel-Layer"/>' +
+				'<path class="fil0" d="M200.121 10.3466l0 5.8289c-3.0198,-1.14 -5.7084,-1.7164 -8.0615,-1.7164 -1.3938,0 -2.5037,0.2581 -3.3382,0.7571 -0.8346,0.5033 -1.2605,1.1228 -1.2605,1.8541 0,0.9722 0.9421,1.8368 2.8392,2.6112l5.4805 2.6671c4.4309,2.1122 6.6291,4.9169 6.6291,8.4401 0,2.9295 -1.1658,5.2654 -3.5189,6.9947 -2.3359,1.7466 -5.4805,2.6112 -9.3951,2.6112 -1.8068,0 -3.4285,-0.0774 -4.8696,-0.2409 -1.4411,-0.1548 -3.0973,-0.4732 -4.9342,-0.9292l0 -6.0999c3.3683,1.14 6.4355,1.7164 9.1972,1.7164 3.2952,0 4.9342,-0.955 4.9342,-2.8822 0,-0.9593 -0.6711,-1.7336 -2.0347,-2.3402l-6.0871 -2.594c-2.2455,-1.0152 -3.9146,-2.2455 -5.0073,-3.7038 -1.0754,-1.4712 -1.6218,-3.1575 -1.6218,-5.0847 0,-2.6973 1.1357,-4.8697 3.3812,-6.5216 2.2628,-1.639 5.2655,-2.4606 8.9994,-2.4606 1.2131,0 2.6112,0.1075 4.1599,0.3054 1.5615,0.2108 3.0628,0.4689 4.5082,0.7873z"/>' +
+				'<path class="fil0" d="M27.7222 10.3466l0 5.8289c-3.0199,-1.14 -5.7042,-1.7164 -8.0573,-1.7164 -1.3981,0 -2.5036,0.2581 -3.3382,0.7571 -0.8345,0.5033 -1.2604,1.1228 -1.2604,1.8541 0,0.9722 0.955,1.8368 2.8521,2.6112l5.4805 2.6671c4.4136,2.1122 6.6162,4.9169 6.6162,8.4401 0,2.9295 -1.1701,5.2654 -3.506,6.9947 -2.3531,1.7466 -5.4805,2.6112 -9.408,2.6112 -1.8068,0 -3.4329,-0.0774 -4.874,-0.2409 -1.4411,-0.1548 -3.0801,-0.4732 -4.9298,-0.9292l0 -6.0999c3.3812,1.14 6.4484,1.7164 9.1929,1.7164 3.2952,0 4.9342,-0.955 4.9342,-2.8822 0,-0.9593 -0.6668,-1.7336 -2.0176,-2.3402l-6.087 -2.594c-2.2628,-1.0152 -3.9319,-2.2455 -5.0073,-3.7038 -1.0927,-1.4712 -1.6261,-3.1575 -1.6261,-5.0847 0,-2.6973 1.1271,-4.8697 3.3855,-6.5216 2.2456,-1.639 5.2525,-2.4606 8.9865,-2.4606 1.226,0 2.6069,0.1075 4.1727,0.3054 1.5487,0.2108 3.05,0.4689 4.4911,0.7873z"/>' +
+				'<polygon class="fil0" points="34.0028,9.8002 42.9291,9.8002 42.9291,39.8483 34.0028,39.8483 "/>' +
+				'<polygon class="fil0" points="71.6866,9.8002 71.6866,15.3539 58.4241,15.3539 58.4241,22.0173 69.9272,22.0173 69.9272,27.0246 58.4241,27.0246 58.4241,34.0194 71.9576,34.0194 71.9576,39.8483 49.8335,39.8483 49.8335,9.8002 "/>' +
+				'<polygon class="fil0" points="113.358,9.8002 113.358,39.8483 105.025,39.8483 105.025,20.0299 96.3789,40.1236 91.234,40.1236 82.9186,20.0299 82.9186,39.8483 76.8918,39.8483 76.8918,9.8002 87.7882,9.8002 95.226,28.1947 103.008,9.8002 "/>' +
+				'<polygon class="fil0" points="142.103,9.8002 142.103,15.3539 128.913,15.3539 128.913,22.0173 140.416,22.0173 140.416,27.0246 128.913,27.0246 128.913,34.0194 142.374,34.0194 142.374,39.8483 120.25,39.8483 120.25,9.8002 "/>' +
+				'<polygon class="fil0" points="173.424,9.8002 173.424,39.8483 163.956,39.8483 153.331,20.5762 153.331,39.8483 147.308,39.8483 147.308,9.8002 157.052,9.8002 167.402,28.7411 167.402,9.8002 "/>' +
+				'</g>' +
+				'</svg>';
+var svgSiemens = new Blob([svgSiemensData], {type: 'image/svg+xml;charset=utf-8'});
+var urlSiemens = DOMURL.createObjectURL(svgSiemens);
+
+// Philips Logo
+var svgPhilipsData = 
+			'<svg' +
+			'   xmlns:svg="http://www.w3.org/2000/svg"' +
+			'   xmlns="http://www.w3.org/2000/svg"' +
+			'   version="1.0"' +
+			'   width="499.76126"' +
+			'   height="91.636253"' +
+			'   id="svg2759">' +
+			'  <defs' +
+			'	 id="defs2761">' +
+			'	<clipPath' +
+			'	   id="clipPath2855">' +
+			'	  <path' +
+			'		 d="M 0,595.276 L 841.89,595.276 L 841.89,0 L 0,0 L 0,595.276 z"' +
+			'		 id="path2857" />' +
+			'	</clipPath>' +
+			'  </defs>' +
+			'  <g' +
+			'	 transform="translate(-127.26223,-383.68692)"' +
+			'	 id="layer1">' +
+			'	<g' +
+			'	   transform="matrix(1.25,0,0,-1.25,-154.35527,849.47317)"' +
+			'	   id="g2851">' +
+			'	  <g' +
+			'		 clip-path="url(#clipPath2855)"' +
+			'		 id="g2853">' +
+			'		<path' +
+			'		   d="M 360.917,371.159 L 339.441,371.159 L 339.441,343.188 L 317.082,343.188 L 317.082,371.159 L 295.603,371.159 L 295.603,300.79 L 317.082,300.79 L 317.082,328.468 L 339.441,328.468 L 339.441,300.79 L 360.917,300.79 L 360.917,371.159 z M 435.641,314.926 L 435.641,371.159 L 414.164,371.159 L 414.164,300.79 L 453.001,300.79 L 456.234,314.926 L 435.641,314.926 z M 398.279,371.159 L 376.803,371.159 L 376.803,300.789 L 398.279,300.789 L 398.279,371.159 z M 485.361,371.159 L 463.887,371.159 L 463.887,300.789 L 485.361,300.789 L 485.361,371.159 z M 591.264,353.2 C 591.264,357.026 595.094,358.795 601.265,358.795 C 608.033,358.795 615.394,357.322 620.391,355.253 L 618.629,370.568 C 613.034,371.746 608.033,372.629 598.916,372.629 C 581.556,372.629 569.793,365.781 569.793,351.428 C 569.793,326.703 603.336,331.704 603.336,320.222 C 603.336,315.809 600.094,313.457 592.146,313.457 C 585.097,313.457 574.203,315.809 567.732,319.048 L 570.093,302.85 C 576.559,300.494 585.385,299.32 592.449,299.32 C 610.39,299.32 625.103,305.21 625.103,322.877 C 625.103,346.423 591.264,342.011 591.264,353.2 M 530.674,317.574 C 550.664,317.574 563.319,327.881 563.319,345.836 C 563.319,365.564 549.789,372.629 527.724,372.629 C 519.192,372.629 508.89,372.042 501.537,371.159 L 501.537,300.79 L 523.022,300.79 L 523.022,317.574 L 530.674,317.574 z M 542.137,345.545 C 542.137,336.416 537.728,330.233 526.545,330.233 L 523.022,330.233 L 523.022,359.308 C 524.268,359.378 525.442,359.378 526.545,359.378 C 537.133,359.378 542.137,354.375 542.137,345.545 M 254.419,317.574 C 274.425,317.574 287.074,327.881 287.074,345.836 C 287.074,365.564 273.541,372.629 251.478,372.629 C 242.945,372.629 232.647,372.042 225.294,371.159 L 225.294,300.79 L 246.767,300.79 L 246.767,317.574 L 254.419,317.574 z M 265.896,345.545 C 265.896,336.416 261.481,330.233 250.301,330.233 L 246.767,330.233 L 246.767,359.308 C 248.023,359.378 249.196,359.378 250.301,359.378 C 260.887,359.378 265.896,354.375 265.896,345.545"' +
+			'		   id="path2859"' +
+			'		   style="fill:#1476c6;fill-opacity:1;fill-rule:nonzero;stroke:none" />' +
+			'	  </g>' +
+			'	</g>' +
+			'  </g>' +
+			'</svg>';
+var svgPhilips = new Blob([svgPhilipsData], {type: 'image/svg+xml;charset=utf-8'});
+var urlPhilips = DOMURL.createObjectURL(svgPhilips);
+
+// Toshiba Logo
+var svgToshibaData = 
+			'<svg' +
+			'   xmlns:svg="http://www.w3.org/2000/svg"' +
+			'   xmlns="http://www.w3.org/2000/svg"' +
+			'   version="1.0"' +
+			'   width="800"' +
+			'   height="121.893"' +
+			'   viewBox="0 0 800 121.893"' +
+			'   id="Layer_1"' +
+			'   xml:space="preserve"><defs' +
+			'   id="defs24" />' +
+			'<g' +
+			'   id="g3">' +
+			'	<g' +
+			'   id="g5">' +
+			'		<path' +
+			'   d="M 765.446,119.779 L 800,119.779 L 764.347,2.118 L 715.246,2.118 L 679.603,119.779 L 714.158,119.779 L 720.46,98 L 759.123,98 L 765.446,119.779 M 727.941,71.837 L 739.705,31.186 L 739.899,31.186 L 751.66,71.837 L 727.941,71.837 z "' +
+			'   style="fill:#bf2b2f"' +
+			'   id="path7" />' +
+			'		<path' +
+			'   d="M 172.483,121.893 C 207.965,121.893 225.113,115.64 227.541,83.625 C 228.117,76.007 228.233,68.186 228.233,60.936 C 228.24,53.711 228.117,45.882 227.541,38.265 C 225.113,6.24 207.965,0 172.483,0 C 136.998,0 119.86,6.24 117.436,38.265 C 116.853,45.882 116.733,53.711 116.733,60.936 C 116.74,68.186 116.852,76.007 117.436,83.625 C 119.86,115.639 136.998,121.893 172.483,121.893 M 150.166,60.936 C 150.166,54.475 150.33,50.656 150.47,47.822 C 151.373,29.661 158.544,27.544 172.483,27.544 C 186.426,27.544 193.596,29.661 194.493,47.822 C 194.633,50.655 194.797,54.474 194.797,60.936 C 194.797,67.418 194.633,71.244 194.493,74.071 C 193.596,92.235 186.426,94.356 172.483,94.356 C 158.544,94.356 151.373,92.235 150.47,74.071 C 150.33,71.244 150.166,67.418 150.166,60.936 z "' +
+			'   style="fill:#bf2b2f"' +
+			'   id="path9" />' +
+			'		<polyline' +
+			'   fill="#BF2B2F"' +
+			'   points="0,2.172 0,31.503 35.172,31.503 35.172,119.833 70.357,119.833 70.357,31.503 105.529,31.503     105.529,2.172 0,2.172   "' +
+			'   id="polyline11"' +
+			'   style="fill:#bf2b2f" />' +
+			'		<polyline' +
+			'   fill="#BF2B2F"' +
+			'   points="539.852,119.779 539.852,2.118 506.46,2.118 506.46,119.779 539.852,119.779   "' +
+			'   id="polyline13"' +
+			'   style="fill:#bf2b2f" />' +
+			'		<polyline' +
+			'   fill="#BF2B2F"' +
+			'   points="405.5,45.077 405.5,2.118 372.295,2.118 372.295,119.779 405.5,119.779 405.5,74.408     444.075,74.408 444.075,119.779 477.269,119.779 477.269,2.118 444.075,2.118 444.075,45.077 405.5,45.077   "' +
+			'   id="polyline15"' +
+			'   style="fill:#bf2b2f" />' +
+			'		<g' +
+			'   id="g17">' +
+			'			<path' +
+			'   d="M 649.673,58.283 C 664.461,54.502 668.802,45.667 668.802,32.897 C 668.802,7.038 652.531,2.117 629.395,2.117 L 569.451,2.117 L 569.451,119.778 L 632.372,119.778 C 661.345,119.778 671.083,107.298 671.083,88.105 C 671.083,74.722 668.015,62.914 649.673,58.283 M 602.636,71.452 L 625.656,71.452 C 634.957,71.452 636.898,75.526 636.898,82.152 C 636.898,88.784 633.26,92.869 625.656,92.869 L 602.636,92.869 L 602.636,71.452 z M 602.636,29.027 L 625.656,29.027 C 631.674,29.027 635.387,31.878 635.387,38.735 C 635.387,44.613 631.711,48.231 625.656,48.231 L 602.636,48.231 L 602.636,29.027 z "' +
+			'   style="fill:#bf2b2f"' +
+			'   id="path19" />' +
+			'			<path' +
+ 			'  d="M 247.58,81.167 L 279.226,81.167 C 279.26,86.875 279.99,90.69 282.758,92.797 C 285.912,95.171 288.729,95.955 298.082,95.955 C 307.084,95.955 316.935,95.955 316.935,84.87 C 316.935,76.128 311.428,74.133 301.257,73.591 C 276.045,72.255 266.924,71.542 257.527,64.566 C 251.127,59.809 247.809,50.548 247.809,38.024 C 247.809,16.727 255.239,9.256 265.959,4.043 C 277.017,-1.338 320.43,-1.338 332.108,4.043 C 346.804,10.811 347.234,25.463 347.234,39.054 L 315.656,39.054 C 315.598,32.125 314.04,30.168 312.768,28.879 C 309.491,25.971 304.82,25.357 298.079,25.357 C 289.919,25.357 280.485,25.725 280.485,35.634 C 280.485,43.194 283.748,46.354 292.334,46.91 C 304.118,47.664 327.353,48.407 335.628,53.293 C 347.242,60.16 350.246,69.452 350.246,84.612 C 350.246,106.516 342.407,112.954 331.502,117.768 C 318.913,123.333 276.86,123.333 263.194,117.342 C 247.89,110.668 247.58,97.376 247.58,81.167"' +
+			'   style="fill:#bf2b2f"' +
+			'   id="path21" />' +
+			'		</g>' +
+			'	</g>' +
+			'</g>' +
+			'</svg>';
+var svgToshiba = new Blob([svgToshibaData], {type: 'image/svg+xml;charset=utf-8'});
+var urlToshiba = DOMURL.createObjectURL(svgToshiba);
+
+// Kodak Logo
+var svgKodakData = 
+			'<?xml version="1.0" encoding="utf-8"?>' +
+			'<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd" [' +
+				'<!ENTITY ns_svg "http://www.w3.org/2000/svg">' +
+				'<!ENTITY ns_xlink "http://www.w3.org/1999/xlink">' +
+			']>' +
+			'<svg  version="1.1" id="Layer_1" xmlns="&ns_svg;" xmlns:xlink="&ns_xlink;" width="364" height="106" viewBox="0 0 364 106" overflow="visible" enable-background="new 0 0 364 106" xml:space="preserve">' +
+			'<g>' +
+				'<polygon fill-rule="evenodd" clip-rule="evenodd" fill="#DA0029" points="7.754,11.357 27.882,11.357 27.882,45.612 55.149,11.357 79.922,11.357 48.384,50.748 81.47,95.541 55.149,95.541 27.882,58.039 27.882,95.541 7.754,95.541 7.754,11.357 	"/>' +
+				'<polygon fill-rule="evenodd" clip-rule="evenodd" fill="#DA0029" points="292.012,8.735 312.141,8.735 312.141,58.586 331.965,33.614 354.139,33.614 330.361,63.141 356.246,95.541 331.778,95.541 312.141,70.604 312.141,95.541 292.012,95.541 292.012,8.735 	"/>' +
+				'<path fill-rule="evenodd" clip-rule="evenodd" fill="#DA0029" d="M110.09,31.6c22.113,0,33.958,14.704,33.958,32.832 c0,18.131-11.667,32.834-33.958,32.834c-22.291,0-33.959-14.703-33.959-32.834C76.131,46.304,87.976,31.6,110.09,31.6L110.09,31.6z M110.09,47.175c10.043,0,15.421,7.729,15.421,17.257c0,9.529-5.299,17.256-15.421,17.256c-10.124,0-15.423-7.727-15.423-17.256 C94.667,54.904,100.044,47.175,110.09,47.175L110.09,47.175z"/>' +
+				'<path fill-rule="evenodd" clip-rule="evenodd" fill="#DA0029" d="M183.416,31.6c5.459,0,10.483,1.443,14.304,3.877V8.735h19.283 v55.697l0,0c0,18.131-11.42,32.834-33.587,32.834c-22.167,0-33.768-14.703-33.768-32.834C149.648,46.304,161.425,31.6,183.416,31.6 L183.416,31.6z M183.416,47.175c9.991,0,15.337,7.729,15.337,17.257c0,9.529-5.269,17.256-15.337,17.256 c-10.065,0-15.336-7.727-15.336-17.256C168.08,54.904,173.428,47.175,183.416,47.175L183.416,47.175z"/>' +
+				'<path fill-rule="evenodd" clip-rule="evenodd" fill="#DA0029" d="M222.957,74.904c0-15.705,11.016-19.781,28.931-19.781h14.478 c0-7.248-4.993-9.596-14.315-9.596c-8.196,0-15.533,1.575-18.744,3.55V34.474c5.479-2.312,15.179-3.142,22.173-3.142 c18.207,0,28.14,7.459,28.14,24.862v18.174c0,12.836-11.799,22.898-29.893,22.898C234.1,97.266,222.957,88.852,222.957,74.904 L222.957,74.904z M240.21,74.104c0-5.191,4.46-6.709,12.187-6.709h13.969v6.529c0,4.354-5.088,7.764-12.891,7.764 C245.014,81.688,240.21,78.971,240.21,74.104L240.21,74.104z"/>' +
+			'</g>' +
+			'</svg>';
+var svgKodak = new Blob([svgKodakData], {type: 'image/svg+xml;charset=utf-8'});
+var urlKodak = DOMURL.createObjectURL(svgKodak);
+
+// Carestream Logo
+var svgCarestreamData = 
+			'<?xml version="1.0" encoding="UTF-8" ?>' +
+			'<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">' +
+			'<svg width="131pt" height="24pt" viewBox="0 0 1310 245" version="1.1" xmlns="http://www.w3.org/2000/svg">' +
+			'<path fill="none" d=" M 0.00 0.00 L 1310.00 0.00 L 1310.00 245.00 L 0.00 245.00 L 0.00 0.00 Z" />' +
+			'<path fill="#f48229" d=" M 61.38 32.28 C 78.92 20.76 99.97 14.47 120.98 14.99 C 137.33 14.55 153.46 19.41 167.79 27.05 C 167.77 42.34 167.79 57.64 167.79 72.93 C 158.06 63.11 146.28 54.56 132.50 51.75 C 115.74 48.31 97.60 51.76 83.58 61.66 C 68.10 72.30 57.93 89.92 55.57 108.48 C 53.35 125.72 56.75 144.02 66.54 158.55 C 74.68 170.77 87.36 179.77 101.50 183.61 C 116.70 187.74 133.74 187.50 147.83 179.88 C 155.33 176.02 161.59 170.30 167.79 164.69 C 167.75 179.95 167.84 195.20 167.75 210.46 C 157.94 214.91 147.76 218.75 137.09 220.49 C 112.16 224.44 85.72 219.99 64.05 206.84 C 41.42 193.32 24.48 170.64 18.11 145.03 C 12.83 123.68 13.88 100.56 22.18 80.09 C 29.94 60.64 43.86 43.74 61.38 32.28 Z" />' +
+			'<path fill="#f48229" d=" M 649.71 44.71 C 661.74 44.72 673.77 44.68 685.79 44.73 C 685.78 59.39 685.77 74.05 685.79 88.72 C 694.29 88.70 702.78 88.69 711.28 88.72 C 711.30 99.15 711.30 109.57 711.29 120.00 C 702.79 120.00 694.29 120.00 685.79 120.00 C 685.76 152.52 685.81 185.03 685.77 217.54 C 673.74 217.51 661.71 217.64 649.68 217.48 C 649.74 184.99 649.68 152.50 649.71 120.02 C 644.95 119.97 640.18 120.06 635.42 119.94 C 635.59 109.51 635.23 99.06 635.60 88.63 C 640.30 88.77 645.01 88.67 649.71 88.72 C 649.70 74.05 649.70 59.38 649.71 44.71 Z" />' +
+			'<path fill="#f48229" d=" M 560.39 92.26 C 569.52 85.81 580.98 83.47 592.00 84.01 C 606.26 84.21 620.48 88.90 631.74 97.72 C 625.75 104.83 619.75 111.91 613.77 119.02 C 606.69 113.83 598.15 109.00 589.04 110.66 C 583.56 111.39 577.96 116.00 578.54 121.97 C 578.78 126.69 583.46 129.05 587.24 130.76 C 601.23 136.71 616.85 140.13 628.56 150.42 C 635.57 156.43 638.43 165.95 638.04 174.95 C 638.54 187.34 633.24 199.80 623.89 207.96 C 613.12 217.68 598.24 221.62 583.98 221.58 C 565.61 221.73 547.36 213.76 535.07 200.09 C 541.37 192.69 547.66 185.28 553.97 177.89 C 562.29 186.05 572.83 193.55 585.04 193.03 C 592.38 193.14 600.21 187.85 600.70 180.10 C 601.40 175.59 598.84 171.16 594.83 169.16 C 581.29 161.61 564.68 159.84 552.89 149.17 C 544.54 141.78 542.31 129.64 543.96 119.02 C 545.31 108.29 551.52 98.39 560.39 92.26 Z" />' +
+			'<path fill="#f48229" d=" M 188.25 107.27 C 198.21 94.83 213.18 86.46 229.08 84.91 C 242.22 83.30 256.22 86.07 266.86 94.20 C 271.03 97.29 274.77 100.92 278.20 104.81 C 278.24 99.45 278.19 94.09 278.22 88.73 C 290.30 88.66 302.38 88.75 314.47 88.68 C 314.65 131.63 314.51 174.57 314.54 217.52 C 302.43 217.58 290.33 217.54 278.22 217.54 C 278.20 212.19 278.25 206.85 278.18 201.50 C 273.28 206.85 268.10 212.14 261.63 215.58 C 249.23 222.52 234.10 222.89 220.54 219.63 C 203.13 215.33 188.31 202.69 180.53 186.64 C 168.42 161.54 170.53 129.24 188.25 107.27 Z" />' +
+			'<path fill="#f48229" d=" M 383.07 87.20 C 393.08 83.52 404.58 83.38 414.39 87.78 C 412.73 99.08 411.05 110.38 409.28 121.67 C 400.90 116.85 390.70 116.09 381.46 118.57 C 375.35 120.27 369.84 124.28 366.76 129.88 C 362.38 137.46 361.39 146.43 361.28 155.03 C 361.33 175.83 361.23 196.64 361.34 217.44 C 349.26 217.74 337.18 217.38 325.10 217.62 C 324.86 174.66 325.07 131.69 325.00 88.72 C 337.10 88.70 349.19 88.69 361.29 88.72 C 361.26 95.05 361.36 101.38 361.23 107.71 C 366.34 99.01 373.43 90.89 383.07 87.20 Z" />' +
+			'<path fill="#f48229" d=" M 428.79 100.69 C 439.52 91.02 453.76 85.88 468.05 84.83 C 485.03 83.39 503.15 86.65 516.97 97.14 C 529.16 106.18 536.76 120.38 539.58 135.12 C 541.19 142.97 541.45 151.02 541.27 159.00 C 509.16 159.00 477.04 158.98 444.92 159.01 C 445.35 167.99 447.46 177.49 453.71 184.29 C 459.30 190.45 467.85 193.15 476.01 193.04 C 483.36 193.27 490.96 191.42 496.84 186.84 C 500.89 183.88 503.79 179.73 506.86 175.82 C 517.93 177.74 529.05 179.41 540.15 181.24 C 534.76 195.47 524.15 207.86 510.38 214.53 C 495.33 221.91 477.84 222.94 461.50 220.25 C 446.31 217.67 431.78 210.07 422.10 197.91 C 410.66 183.74 406.76 164.79 408.06 146.93 C 408.96 129.72 415.71 112.29 428.79 100.69 Z" />' +
+			'<path fill="#f48229" d=" M 775.53 87.31 C 785.64 83.52 797.24 83.38 807.20 87.76 C 805.59 99.08 803.72 110.36 802.17 121.69 C 793.60 116.81 783.12 116.02 773.73 118.73 C 767.37 120.58 761.86 125.06 758.90 131.00 C 754.22 140.22 753.92 150.84 754.00 160.96 C 753.95 179.84 754.10 198.72 753.92 217.60 C 741.96 217.50 730.01 217.54 718.05 217.58 C 717.93 174.63 718.04 131.68 718.00 88.73 C 730.00 88.68 742.00 88.70 754.00 88.72 C 754.01 95.06 753.99 101.40 754.02 107.73 C 759.05 99.10 766.04 91.06 775.53 87.31 Z" />' +
+			'<path fill="#f48229" d=" M 823.84 98.80 C 837.47 87.68 855.70 83.64 872.98 84.64 C 886.32 85.35 899.81 89.27 910.41 97.64 C 923.05 107.28 930.48 122.47 932.90 137.97 C 934.17 144.90 934.04 151.98 934.00 159.00 C 901.90 159.00 869.81 158.99 837.71 159.01 C 838.12 168.71 840.69 179.12 848.10 185.91 C 856.16 193.13 867.96 194.21 878.19 192.16 C 887.28 190.28 894.52 183.59 899.34 175.93 C 910.59 177.53 921.79 179.47 933.01 181.27 C 927.77 194.68 918.14 206.54 905.38 213.40 C 889.82 221.79 871.26 223.13 854.07 220.19 C 837.17 217.33 821.04 208.00 811.66 193.43 C 801.51 178.11 799.15 158.84 801.43 140.91 C 803.49 124.83 810.97 108.99 823.84 98.80 Z" />' +
+			'<path fill="#f48229" d=" M 964.05 97.84 C 978.55 86.01 998.79 81.69 1016.89 86.31 C 1027.91 89.09 1037.25 96.35 1044.49 104.91 C 1044.45 99.50 1044.36 94.08 1044.54 88.67 C 1056.63 88.76 1068.71 88.65 1080.79 88.73 C 1080.73 131.53 1080.87 174.34 1080.73 217.14 L 1080.38 217.49 C 1068.41 217.62 1056.44 217.53 1044.47 217.53 C 1044.39 212.28 1044.49 207.03 1044.44 201.78 C 1038.34 208.06 1031.94 214.41 1023.65 217.72 C 1009.25 223.54 992.56 222.61 978.33 216.74 C 964.94 211.19 953.90 200.54 947.39 187.64 C 939.01 171.20 937.19 151.71 941.51 133.85 C 944.99 119.90 952.70 106.80 964.05 97.84 Z" />' +
+			'<path fill="#f48229" d=" M 1138.86 92.89 C 1149.99 84.73 1164.76 83.06 1178.04 85.53 C 1190.51 87.88 1200.39 97.11 1206.82 107.65 C 1213.14 97.86 1222.51 89.68 1233.91 86.55 C 1245.09 83.46 1257.36 83.73 1268.22 87.94 C 1278.27 91.88 1285.66 100.91 1288.83 111.09 C 1293.04 123.28 1291.84 136.31 1292.00 148.97 C 1291.93 171.85 1292.14 194.74 1291.89 217.62 C 1279.94 217.47 1267.99 217.56 1256.04 217.57 C 1255.94 200.38 1256.03 183.18 1256.00 165.98 C 1255.84 155.61 1256.52 145.18 1255.08 134.88 C 1254.14 128.93 1252.13 122.54 1247.06 118.85 C 1241.54 115.00 1234.27 114.86 1227.90 116.16 C 1220.90 117.76 1215.60 123.56 1213.20 130.14 C 1210.27 137.71 1209.85 145.95 1210.00 153.98 C 1209.95 175.19 1210.09 196.39 1209.93 217.59 C 1197.84 217.44 1185.76 217.68 1173.68 217.47 C 1173.75 193.97 1173.67 170.48 1173.72 146.98 C 1173.62 140.31 1173.62 133.35 1170.79 127.17 C 1167.31 119.39 1158.45 114.72 1150.07 115.53 C 1141.66 116.31 1133.44 121.74 1130.55 129.88 C 1127.60 137.87 1127.78 146.57 1127.78 154.96 C 1127.77 175.83 1127.81 196.69 1127.76 217.55 C 1115.66 217.54 1103.56 217.57 1091.47 217.53 C 1091.52 174.57 1091.29 131.61 1091.58 88.65 C 1103.65 88.76 1115.71 88.68 1127.78 88.70 C 1127.78 93.45 1127.78 98.20 1127.78 102.95 C 1131.42 99.55 1134.71 95.72 1138.86 92.89 Z" />' +
+			'<path fill="#000000" d=" M 460.02 114.84 C 469.11 109.61 480.82 109.29 490.34 113.56 C 499.13 117.61 504.32 126.61 506.58 135.69 C 486.52 135.72 466.46 135.74 446.40 135.68 C 448.24 127.44 452.48 119.18 460.02 114.84 Z" />' +
+			'<path fill="#000000" d=" M 848.32 118.31 C 856.29 110.59 868.67 109.13 879.02 112.00 C 889.75 114.99 897.22 125.10 899.17 135.76 C 879.18 135.62 859.19 135.80 839.19 135.66 C 840.77 129.28 843.37 122.85 848.32 118.31 Z" />' +
+			'<path fill="#000000" d=" M 240.50 117.66 C 249.29 116.33 258.65 118.07 266.03 123.13 C 273.75 128.25 279.38 136.41 281.27 145.48 C 283.66 156.33 280.70 168.14 273.43 176.53 C 264.59 186.96 249.45 191.61 236.35 187.47 C 225.75 184.42 216.78 176.19 212.83 165.88 C 209.09 156.67 209.58 145.88 214.12 137.03 C 219.08 126.80 229.29 119.41 240.50 117.66 Z" />' +
+			'<path fill="#000000" d=" M 1006.46 117.72 C 1016.90 115.92 1028.08 118.88 1036.05 125.92 C 1048.93 136.75 1052.31 157.03 1043.42 171.37 C 1035.26 185.65 1016.57 192.80 1001.07 186.95 C 985.57 181.86 974.88 165.35 976.89 149.10 C 978.28 133.57 991.10 120.13 1006.46 117.72 Z" />' +
+			'</svg>';
+var svgCarestream = new Blob([svgCarestreamData], {type: 'image/svg+xml;charset=utf-8'});
+var urlCarestream = DOMURL.createObjectURL(svgCarestream);
+
+//GE Logo
+var svgGEData = 
+'<?xml version="1.0" encoding="UTF-8"?>' +
+'<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">' +
+'<svg width="350pt" height="350pt" viewBox="0 0 350 350" version="1.1" xmlns="http://www.w3.org/2000/svg">' +
+'<g id="#fefffeff">' +
+'<path fill="#fefffe" opacity="1.00" d=" M 160.47 18.62 C 190.53 16.17 221.27 22.83 247.67 37.38 C 292.69 61.64 324.59 108.96 329.12 160.03 C 332.53 191.50 325.81 223.93 310.50 251.61 C 295.18 279.49 271.21 302.58 242.68 316.70 C 220.29 327.99 195.09 333.69 170.01 333.14 C 135.66 332.85 101.65 320.56 74.76 299.23 C 51.62 280.87 33.72 255.99 23.92 228.10 C 8.64 185.21 13.14 135.63 36.45 96.45 C 52.10 69.29 76.23 47.19 104.45 33.59 C 121.99 25.20 141.07 20.01 160.47 18.62 M 132.62 33.59 C 105.51 40.91 80.20 56.86 64.12 80.16 C 53.29 95.48 47.06 113.62 43.86 131.98 C 42.34 143.44 41.71 155.94 47.44 166.41 C 50.09 171.61 54.72 175.54 57.00 180.94 C 59.17 185.73 57.63 192.21 52.96 194.94 C 48.58 198.08 42.39 196.88 38.43 193.61 C 32.72 189.13 30.30 181.82 29.08 174.92 C 26.67 159.38 29.80 143.66 33.76 128.66 C 30.66 129.95 31.11 134.24 29.94 136.96 C 23.17 163.21 23.22 191.27 30.64 217.38 C 37.65 242.32 51.96 265.48 72.62 281.36 C 88.18 293.67 107.25 300.67 126.55 304.46 C 138.19 306.42 150.85 307.20 161.76 301.90 C 167.17 299.19 171.22 294.47 176.52 291.60 C 180.98 289.28 186.79 290.04 190.28 293.72 C 194.31 297.74 194.38 304.63 191.10 309.13 C 187.56 313.95 181.86 316.63 176.23 318.18 C 163.81 321.29 150.82 319.89 138.39 317.63 C 133.84 316.91 129.53 314.89 124.88 314.90 C 127.37 317.36 131.02 317.79 134.23 318.75 C 158.62 324.76 184.51 324.80 208.94 318.96 C 237.05 312.20 263.65 296.38 280.35 272.41 C 291.17 257.53 297.13 239.75 300.81 221.89 C 302.77 208.70 303.76 193.79 295.75 182.29 C 292.02 176.80 286.03 171.52 287.23 164.19 C 287.74 157.34 295.41 153.01 301.71 155.24 C 309.94 157.91 313.79 166.73 315.47 174.55 C 318.67 190.75 315.49 207.40 311.21 223.09 C 312.33 222.92 313.02 222.29 313.28 221.21 C 320.66 198.17 321.94 173.32 317.68 149.54 C 312.79 121.67 299.91 94.49 278.48 75.56 C 265.62 63.83 249.77 55.56 233.01 50.99 C 219.05 46.84 203.94 43.97 189.53 47.54 C 182.44 49.09 176.93 54.06 171.25 58.23 C 166.44 61.94 158.74 62.19 154.40 57.60 C 150.49 53.44 150.85 46.56 154.22 42.18 C 158.70 36.28 166.11 33.55 173.17 32.28 C 184.44 30.60 195.96 31.70 207.08 33.92 C 211.49 34.68 215.61 36.71 220.10 37.04 C 219.17 36.26 218.26 35.39 217.08 35.02 C 189.88 26.24 160.12 25.91 132.62 33.59 Z"/>' +
+'<path fill="#fefffe" opacity="1.00" d=" M 136.34 89.34 C 142.42 86.14 150.19 85.18 156.39 88.56 C 161.35 91.40 163.29 97.55 162.80 102.98 C 161.92 113.76 156.71 123.70 150.16 132.12 C 143.08 140.68 134.35 148.26 123.89 152.32 C 124.69 155.66 127.21 159.22 130.99 159.20 C 137.61 159.44 143.35 155.26 148.11 151.10 C 151.53 148.50 151.71 143.95 153.31 140.28 C 155.64 134.54 158.81 128.42 164.59 125.52 C 167.30 124.08 171.44 123.80 173.31 126.69 C 175.35 130.59 173.50 135.06 171.54 138.59 C 168.86 143.71 164.62 147.72 161.25 152.33 C 159.98 156.61 159.75 161.11 159.67 165.55 C 164.35 163.48 168.55 160.53 172.96 157.97 C 180.63 153.01 188.59 148.39 195.71 142.65 C 196.53 139.88 195.41 136.86 195.54 133.98 C 195.10 120.04 199.92 105.75 209.42 95.44 C 215.33 89.21 224.23 84.82 232.93 87.01 C 238.15 87.96 242.24 92.20 243.71 97.19 C 245.57 104.72 242.99 112.59 239.03 119.00 C 232.21 129.67 222.29 137.82 212.25 145.32 C 213.59 148.66 215.50 152.45 219.11 153.69 C 224.28 152.70 229.54 151.29 234.83 152.34 C 238.37 153.08 242.62 154.14 244.35 157.67 C 245.95 161.11 242.89 164.63 239.75 165.70 C 233.07 167.88 226.00 166.65 219.18 166.13 C 211.06 168.07 204.00 173.44 198.94 179.98 C 191.08 190.31 188.65 203.98 190.36 216.65 C 191.99 227.16 197.27 237.75 206.55 243.46 C 217.00 250.15 232.06 248.73 240.72 239.70 C 248.89 231.27 251.47 217.85 246.92 207.02 C 244.99 202.26 240.84 198.20 235.64 197.39 C 229.57 196.02 222.36 199.97 221.48 206.42 C 220.60 211.38 224.08 215.49 227.02 219.04 C 229.29 221.39 229.56 225.73 226.74 227.76 C 222.37 230.75 216.31 228.65 212.83 225.18 C 204.24 216.70 204.51 201.39 212.74 192.73 C 223.20 180.73 244.03 180.50 254.73 192.32 C 266.17 204.99 267.61 225.30 258.81 239.82 C 252.21 251.22 240.31 259.45 227.23 261.31 C 213.00 263.42 197.63 258.91 187.63 248.36 C 168.07 228.44 168.38 193.41 187.04 173.00 C 192.03 167.03 198.62 162.78 205.23 158.84 C 203.80 156.91 202.30 155.03 200.78 153.16 C 187.94 162.47 174.51 170.93 160.69 178.70 C 158.35 179.56 158.77 182.38 158.43 184.37 C 157.20 201.38 155.75 219.11 147.29 234.31 C 141.57 245.05 132.92 254.89 121.32 259.31 C 112.12 262.78 100.99 263.09 92.55 257.50 C 84.47 252.43 80.80 242.31 81.42 233.09 C 82.70 221.36 89.37 210.77 97.85 202.81 C 109.49 192.18 123.60 184.83 137.45 177.53 C 140.27 175.96 143.34 174.77 145.86 172.74 C 146.79 170.20 146.93 167.47 147.19 164.81 C 140.01 169.15 130.94 172.64 122.68 169.31 C 115.93 166.71 111.73 160.25 109.58 153.63 C 103.21 152.95 96.80 150.41 92.74 145.27 C 85.66 136.78 85.21 123.87 90.33 114.30 C 92.04 110.85 95.88 109.00 99.64 109.23 C 100.37 110.71 101.74 112.18 101.24 113.98 C 100.12 120.19 97.94 126.64 100.00 132.93 C 101.02 137.23 104.58 140.66 109.00 141.25 C 109.94 131.07 111.92 120.85 116.71 111.70 C 121.22 102.80 127.38 94.17 136.34 89.34 M 142.33 99.30 C 136.29 103.41 132.61 109.98 129.43 116.37 C 126.01 123.58 123.25 131.33 122.94 139.37 C 125.25 138.35 127.43 137.02 129.30 135.31 C 136.86 128.73 143.47 120.89 147.90 111.85 C 149.46 108.58 150.81 104.87 149.92 101.21 C 148.77 98.24 144.76 97.46 142.33 99.30 M 220.50 102.44 C 213.44 110.66 209.56 121.56 209.68 132.39 C 217.64 125.82 224.98 118.12 229.93 108.99 C 231.35 106.07 233.23 101.30 229.63 99.17 C 226.35 97.48 222.65 99.96 220.50 102.44 M 113.45 207.49 C 106.51 213.72 99.74 220.98 97.22 230.19 C 96.01 235.13 95.73 241.37 99.88 245.05 C 104.26 249.05 110.86 247.86 115.92 245.96 C 125.68 242.20 131.57 232.75 135.54 223.57 C 140.17 212.17 143.04 200.03 144.21 187.78 C 133.13 192.90 122.78 199.64 113.45 207.49 Z"/>' +
+'</g>' +
+'<g id="#3a73b8ff">' +
+'<path fill="#3a73b8" opacity="1.00" d=" M 160.51 10.68 C 193.16 8.19 226.48 15.82 254.82 32.21 C 277.49 45.28 297.09 63.72 311.28 85.73 C 328.90 112.64 338.22 144.85 337.95 177.01 C 337.74 210.62 327.04 244.11 307.49 271.48 C 287.66 299.55 258.83 321.17 226.29 332.23 C 197.39 342.23 165.72 343.80 135.90 337.12 C 104.63 330.15 75.58 313.70 53.36 290.63 C 29.81 266.24 13.87 234.49 9.00 200.90 C 4.21 170.98 8.17 139.77 19.86 111.85 C 30.71 85.88 48.38 62.86 70.50 45.49 C 96.14 25.27 127.92 12.94 160.51 10.68 M 160.47 18.62 C 141.07 20.01 121.99 25.20 104.45 33.59 C 76.23 47.19 52.10 69.29 36.45 96.45 C 13.14 135.63 8.64 185.21 23.92 228.10 C 33.72 255.99 51.62 280.87 74.76 299.23 C 101.65 320.56 135.66 332.85 170.01 333.14 C 195.09 333.69 220.29 327.99 242.68 316.70 C 271.21 302.58 295.18 279.49 310.50 251.61 C 325.81 223.93 332.53 191.50 329.12 160.03 C 324.59 108.96 292.69 61.64 247.67 37.38 C 221.27 22.83 190.53 16.17 160.47 18.62 Z"/>' +
+'<path fill="#3a73b8" opacity="1.00" d=" M 132.62 33.59 C 160.12 25.91 189.88 26.24 217.08 35.02 C 218.26 35.39 219.17 36.26 220.10 37.04 C 215.61 36.71 211.49 34.68 207.08 33.92 C 195.96 31.70 184.44 30.60 173.17 32.28 C 166.11 33.55 158.70 36.28 154.22 42.18 C 150.85 46.56 150.49 53.44 154.40 57.60 C 158.74 62.19 166.44 61.94 171.25 58.23 C 176.93 54.06 182.44 49.09 189.53 47.54 C 203.94 43.97 219.05 46.84 233.01 50.99 C 249.77 55.56 265.62 63.83 278.48 75.56 C 299.91 94.49 312.79 121.67 317.68 149.54 C 321.94 173.32 320.66 198.17 313.28 221.21 C 313.02 222.29 312.33 222.92 311.21 223.09 C 315.49 207.40 318.67 190.75 315.47 174.55 C 313.79 166.73 309.94 157.91 301.71 155.24 C 295.41 153.01 287.74 157.34 287.23 164.19 C 286.03 171.52 292.02 176.80 295.75 182.29 C 303.76 193.79 302.77 208.70 300.81 221.89 C 297.13 239.75 291.17 257.53 280.35 272.41 C 263.65 296.38 237.05 312.20 208.94 318.96 C 184.51 324.80 158.62 324.76 134.23 318.75 C 131.02 317.79 127.37 317.36 124.88 314.90 C 129.53 314.89 133.84 316.91 138.39 317.63 C 150.82 319.89 163.81 321.29 176.23 318.18 C 181.86 316.63 187.56 313.95 191.10 309.13 C 194.38 304.63 194.31 297.74 190.28 293.72 C 186.79 290.04 180.98 289.28 176.52 291.60 C 171.22 294.47 167.17 299.19 161.76 301.90 C 150.85 307.20 138.19 306.42 126.55 304.46 C 107.25 300.67 88.18 293.67 72.62 281.36 C 51.96 265.48 37.65 242.32 30.64 217.38 C 23.22 191.27 23.17 163.21 29.94 136.96 C 31.11 134.24 30.66 129.95 33.76 128.66 C 29.80 143.66 26.67 159.38 29.08 174.92 C 30.30 181.82 32.72 189.13 38.43 193.61 C 42.39 196.88 48.58 198.08 52.96 194.94 C 57.63 192.21 59.17 185.73 57.00 180.94 C 54.72 175.54 50.09 171.61 47.44 166.41 C 41.71 155.94 42.34 143.44 43.86 131.98 C 47.06 113.62 53.29 95.48 64.12 80.16 C 80.20 56.86 105.51 40.91 132.62 33.59 M 136.34 89.34 C 127.38 94.17 121.22 102.80 116.71 111.70 C 111.92 120.85 109.94 131.07 109.00 141.25 C 104.58 140.66 101.02 137.23 100.00 132.93 C 97.94 126.64 100.12 120.19 101.24 113.98 C 101.74 112.18 100.37 110.71 99.64 109.23 C 95.88 109.00 92.04 110.85 90.33 114.30 C 85.21 123.87 85.66 136.78 92.74 145.27 C 96.80 150.41 103.21 152.95 109.58 153.63 C 111.73 160.25 115.93 166.71 122.68 169.31 C 130.94 172.64 140.01 169.15 147.19 164.81 C 146.93 167.47 146.79 170.20 145.86 172.74 C 143.34 174.77 140.27 175.96 137.45 177.53 C 123.60 184.83 109.49 192.18 97.85 202.81 C 89.37 210.77 82.70 221.36 81.42 233.09 C 80.80 242.31 84.47 252.43 92.55 257.50 C 100.99 263.09 112.12 262.78 121.32 259.31 C 132.92 254.89 141.57 245.05 147.29 234.31 C 155.75 219.11 157.20 201.38 158.43 184.37 C 158.77 182.38 158.35 179.56 160.69 178.70 C 174.51 170.93 187.94 162.47 200.78 153.16 C 202.30 155.03 203.80 156.91 205.23 158.84 C 198.62 162.78 192.03 167.03 187.04 173.00 C 168.38 193.41 168.07 228.44 187.63 248.36 C 197.63 258.91 213.00 263.42 227.23 261.31 C 240.31 259.45 252.21 251.22 258.81 239.82 C 267.61 225.30 266.17 204.99 254.73 192.32 C 244.03 180.50 223.20 180.73 212.74 192.73 C 204.51 201.39 204.24 216.70 212.83 225.18 C 216.31 228.65 222.37 230.75 226.74 227.76 C 229.56 225.73 229.29 221.39 227.02 219.04 C 224.08 215.49 220.60 211.38 221.48 206.42 C 222.36 199.97 229.57 196.02 235.64 197.39 C 240.84 198.20 244.99 202.26 246.92 207.02 C 251.47 217.85 248.89 231.27 240.72 239.70 C 232.06 248.73 217.00 250.15 206.55 243.46 C 197.27 237.75 191.99 227.16 190.36 216.65 C 188.65 203.98 191.08 190.31 198.94 179.98 C 204.00 173.44 211.06 168.07 219.18 166.13 C 226.00 166.65 233.07 167.88 239.75 165.70 C 242.89 164.63 245.95 161.11 244.35 157.67 C 242.62 154.14 238.37 153.08 234.83 152.34 C 229.54 151.29 224.28 152.70 219.11 153.69 C 215.50 152.45 213.59 148.66 212.25 145.32 C 222.29 137.82 232.21 129.67 239.03 119.00 C 242.99 112.59 245.57 104.72 243.71 97.19 C 242.24 92.20 238.15 87.96 232.93 87.01 C 224.23 84.82 215.33 89.21 209.42 95.44 C 199.92 105.75 195.10 120.04 195.54 133.98 C 195.41 136.86 196.53 139.88 195.71 142.65 C 188.59 148.39 180.63 153.01 172.96 157.97 C 168.55 160.53 164.35 163.48 159.67 165.55 C 159.75 161.11 159.98 156.61 161.25 152.33 C 164.62 147.72 168.86 143.71 171.54 138.59 C 173.50 135.06 175.35 130.59 173.31 126.69 C 171.44 123.80 167.30 124.08 164.59 125.52 C 158.81 128.42 155.64 134.54 153.31 140.28 C 151.71 143.95 151.53 148.50 148.11 151.10 C 143.35 155.26 137.61 159.44 130.99 159.20 C 127.21 159.22 124.69 155.66 123.89 152.32 C 134.35 148.26 143.08 140.68 150.16 132.12 C 156.71 123.70 161.92 113.76 162.80 102.98 C 163.29 97.55 161.35 91.40 156.39 88.56 C 150.19 85.18 142.42 86.14 136.34 89.34 Z"/>' +
+'<path fill="#3a73b8" opacity="1.00" d=" M 142.33 99.30 C 144.76 97.46 148.77 98.24 149.92 101.21 C 150.81 104.87 149.46 108.58 147.90 111.85 C 143.47 120.89 136.86 128.73 129.30 135.31 C 127.43 137.02 125.25 138.35 122.94 139.37 C 123.25 131.33 126.01 123.58 129.43 116.37 C 132.61 109.98 136.29 103.41 142.33 99.30 Z"/>' +
+'<path fill="#3a73b8" opacity="1.00" d=" M 220.50 102.44 C 222.65 99.96 226.35 97.48 229.63 99.17 C 233.23 101.30 231.35 106.07 229.93 108.99 C 224.98 118.12 217.64 125.82 209.68 132.39 C 209.56 121.56 213.44 110.66 220.50 102.44 Z"/>' +
+'<path fill="#3a73b8" opacity="1.00" d=" M 113.45 207.49 C 122.78 199.64 133.13 192.90 144.21 187.78 C 143.04 200.03 140.17 212.17 135.54 223.57 C 131.57 232.75 125.68 242.20 115.92 245.96 C 110.86 247.86 104.26 249.05 99.88 245.05 C 95.73 241.37 96.01 235.13 97.22 230.19 C 99.74 220.98 106.51 213.72 113.45 207.49 Z"/>' +
+'</g>' +
+'</svg>';
+var svgGE = new Blob([svgGEData], {type: 'image/svg+xml;charset=utf-8'});
+var urlGE = DOMURL.createObjectURL(svgGE);
+
+
+// for testing new SVGs
+// document.getElementById('header').innerHTML = "<img src=\"" + urlCarestream + "\" width=100>";
+
+</script>
+
+<!--START ZIP FUNCTIONS-->
+<script>
+//HTML5 Upload by http://techslides.com
+//File, Directory, Archive, or External Image Uploader using Imgur API, HTML5 FormData, ZIPjs, and Cross-Domain XHR
+var filearr = [];
+var filearrUrl = [];
+var tablearr = [];
+
+/* Main unzip function */
+function unzip(zip){
+	model.getEntries(zip, function(entries) {
+        entries.forEach(function(entry) {
+			model.getEntryFile(entry, "Blob");
+        });
+    });
+}
+
+//model for zip.js
+//https://github.com/gildas-lormeau/zip.js
+
+var model = (function() {
+	var URL = window.webkitURL || window.mozURL || window.URL;
+	var acount = 0;
+	var bcount = 0;
+
+	return {
+		getEntries : function(file, onend) {
+			zip.createReader(new zip.BlobReader(file), function(zipReader) {
+				zipReader.getEntries(onend);
+				}, onerror);
+			},
+		getEntryFile : function(entry, creationMethod, onend, onprogress) {
+		acount++;
+
+		var writer, zipFileEntry;
+	
+		function getData() {
+			entry.getData(writer, function(blob) {
+				bcount++;
+				if (blob.size > 10000) { // only load files > 10kB
+					filearrUrl.push(DOMURL.createObjectURL(blob));
+					}
+				if(acount == bcount){
+					var filearrJson = '{"Instances" : [';
+					for (var f = 0; f < filearrUrl.length; f++) {
+						filearrJson += '"' + filearrUrl[f] + '"';
+						if (f < filearrUrl.length - 1) { filearrJson += ',\n'; }
+							}
+						filearrJson += ']}';
+//						document.getElementById('fileProgressArea').innerHTML = "<pre>" + filearrJson;
+						retrieveInstances(JSON.parse(filearrJson));
+						}
+					}, onprogress);
+				}
+			writer = new zip.BlobWriter('application/dicom');
+			getData();
+			}
+		};
+	})();
+</script>
+
+<!--LEAP MOTION-->
+<script src="http://js.leapmotion.com/leap-0.6.3.min.js"></script>
+<script>
+
+//Leapmotion
+var leapStatus = document.getElementById('leapStatus');
+
+var controllerOptions = {enableGestures: true};
+var completedRotation = 0;
+
+var a = 0;
+
+Leap.loop(controllerOptions, function(frame) {
+//	leapStatus.innerHTML = 'Leap.loop running...';
+
+	if (frame.hands.length > 0) {
+		// for windowing
+		initialWindowCenter = windowCenter;
+		initialWindowWidth = windowWidth;
+
+		for (var i = 0; i < frame.hands.length; i++) {
+			var hand = frame.hands[i];
+			//check open palm
+			var extendedFingers = 0;
+			for(var f = 0; f < hand.fingers.length; f++){
+				var finger = hand.fingers[f];
+				if(finger.extended) { extendedFingers++; }
+				}
+			if (extendedFingers > 2) { //consider palm open
+				if (hand.palmNormal[0].toFixed(1)  < -0.5 || hand.palmNormal[0].toFixed(1) > 0.5) { //palm pronate/supinate
+					adjust(0,0,hand.palmNormal[0].toFixed(1)*10,0,0,0,0,0);
+					a++;
+					}	
+				if (hand.palmNormal[2].toFixed(1)  < -0.5 || hand.palmNormal[2].toFixed(1) > 0.5) { //palm flex/extend
+					adjust(0,hand.palmNormal[2].toFixed(1)*10,0,0,0,0,0,0);
+					a++;
+					}	
+				leapStatus.innerHTML = ' | LeapMotion: palm'; // + hand.palmNormal[0].toFixed(1) + "<br>" + hand.palmNormal[2].toFixed(1) + "<br>" + a;
+				}
+			}
+
+		}
+
+	if (frame.gestures.length > 0) {
+		for (var i = 0; i < frame.gestures.length; i++) {
+			var gesture = frame.gestures[i];
+			if (gesture.type == 'keyTap') {
+					currentWindowArray++; 
+					if (currentWindowArray == windowCenterArray.length) {
+						currentWindowArray = 0;
+						}
+				setWindow(windowCenterArray[currentWindowArray], windowWidthArray[currentWindowArray]);	
+				leapStatus.innerHTML = ' | LeapMotion: ' + gesture.type;
+				
+				}
+			if (gesture.type == 'circle') {
+				var clockwise = false;
+				var pointableID = gesture.pointableIds[0];
+				var direction = frame.pointable(pointableID).direction;
+				var dotProduct = Leap.vec3.dot(direction, gesture.normal);
+				if (dotProduct  >  0) clockwise = true;
+				var currentRotation = gesture.progress.toFixed(0);
+				var newRotation = false;
+				if (currentRotation > completedRotation) {
+					completedRotation++;
+//					completedRotation = currentRotation;
+					newRotation = true;
+					}
+				leapStatus.innerHTML = ' | LeapMotion: ' + gesture.state; // + 'Clockwise: ' + clockwise + '<br>Rotation<br>' + completedRotation + '<br>' + currentRotation + '<br>' + newRotation;
+				if (newRotation == true) {
+					if (clockwise == true) {
+						adjust(1,0,0,0,0,0,0,0);
+						} else {
+						adjust(-1,0,0,0,0,0,0,0);
+						}
+					}
+				if (gesture.state == 'stop') {
+					completedRotation = 0;
+					leapStatus.innerHTML = ' | LeapMotion: stop';
+					}
+				}
+			}
+		}
+	});
+
+</script>
