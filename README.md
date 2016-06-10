@@ -1,3 +1,27 @@
+mcdcm v1.2
+=====
+A(nother) HTML5/Javascript DICOM Viewer
+
+I still don't know how to use github...............
+...
+...
+And I still spend most of my time doing clinical work...
+
+Anyway, the upgraded viewer:
+- runs completely as a single file (mviewer.html)
+- has an extra file (ic.html) for MRI T2* Liver and Heart quantification
+- has a folder (zip) of dependencies for zip, JpegLossless (57 & 70) and J2K (91) support
+- supports mouse, touchscreen and Leapmotion
+- supports multiple series (FINALLY!)
+- can load directly from Orthan via ?study= or ?series=
+- cool (completely and utterly useless) UI effects :P
+
+Still takes a damn long time to load large / numerous DICOM files, but tremendous improvement on image manipulation after the files have been loaded.
+
+
+
+
+
 mcdcm v0.1
 =====
 
